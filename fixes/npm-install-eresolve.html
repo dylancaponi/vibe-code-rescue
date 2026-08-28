@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>npm install fails with ERESOLVE on your Lovable or Bolt export: the fix</title>
+<meta name="description" content="You exported your app from Lovable, Bolt, or v0, ran npm install, and got ERESOLVE unable to resolve dependency tree. Here is what the error means and three ways to fix it, from fastest to most correct.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/npm-install-eresolve.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>npm install fails with ERESOLVE on your Lovable or Bolt export</h1>
+<p class="lead">You exported your app from Lovable, Bolt, or v0 to run it yourself, typed <code>npm install</code>, and instead of installing anything it printed a wall of red ending in <code>ERESOLVE unable to resolve dependency tree</code> or <code>ERESOLVE could not resolve</code>. Your app is not broken. Its dependency list is contradictory, and that is common in AI generated projects.</p>
+
+<h2>How common is this?</h2>
+<p>Very. I ran a clean-room install and build of 16 recently updated, publicly available Lovable-built apps. Four of the 16, one in four, failed at <code>npm install</code> with exactly this ERESOLVE error before a single line of their code ever ran. The owners likely never saw it, because the AI tool's own environment resolved packages differently than a fresh machine does.</p>
+
+<h2>What the error actually means</h2>
+<p>Every package in your <code>package.json</code> declares which versions of its "peer" packages it works with. ERESOLVE means two of your packages disagree: for example, a UI library that demands React 18 while your project has React 19, or a date picker pinned to an old version of a library everything else has moved past. AI code generators cause this often because they pick each package version independently, without checking the combination, and their sandboxes silently paper over the conflict.</p>
+
+<h2>Fix 1: the fast unblock (fine for local development)</h2>
+<pre><code>npm install --legacy-peer-deps</code></pre>
+<p>This tells npm to install anyway and ignore the peer conflicts, which is how npm behaved for years before it got strict. It works in the majority of cases because the conflict is usually a package being overly cautious about a version that is actually fine. The risk: if the conflict is real, you find out at runtime instead of install time.</p>
+
+<h2>Fix 2: make it stick for your deploys</h2>
+<p>If fix 1 works locally but your Vercel, Netlify, or Docker build still fails, the build machine is running plain <code>npm install</code>. Create a file named <code>.npmrc</code> in the project root containing:</p>
+<pre><code>legacy-peer-deps=true</code></pre>
+<p>Commit it. Every environment that installs your project now uses the same relaxed behavior.</p>
+
+<h2>Fix 3: the correct fix (resolve the actual conflict)</h2>
+<p>Read the ERESOLVE output carefully. It names the two packages that disagree, in a block like "Found: react@19.1.0" followed by "Could not resolve dependency: peer react@^18.0.0 from some-library@2.3.0". Then either:</p>
+<ul>
+  <li>Upgrade the complaining library to a version that supports your React (check its releases page), or</li>
+  <li>Pin the conflicting package to the version the rest of the tree expects, or</li>
+  <li>Remove the library if the AI added it and nothing imports it, which happens more often than you would think.</li>
+</ul>
+<p>After editing <code>package.json</code>, delete <code>node_modules</code> and <code>package-lock.json</code> and run a fresh <code>npm install</code> to confirm the tree resolves cleanly with no flags.</p>
+
+<h2>One safety note for exported AI projects</h2>
+<p>If you are installing a project you did not write, run <code>npm install --ignore-scripts</code> the first time. Install scripts execute arbitrary code, and you should know what a project contains before you let it run anything.</p>
+
+<h2>Still stuck?</h2>
+<div class="card">
+<p><strong>Send it to me.</strong> Email a repo link or zip and the error text. I will run the install in a clean room, find the real conflict, and tell you what is wrong, free, usually the same day. If you want it fixed and verified end to end, fixes start at $95 with 24 hour turnaround.</p>
+<a class="cta" href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis%20(npm%20install%20fails)">Get a free diagnosis</a>
+</div>
+</main>
+<footer>
+  <div class="inner"><a href="../">Vibe Code Rescue</a>. Broken AI built apps diagnosed free and fixed in 24 hours.</div>
+</footer>
+</body>
+</html>

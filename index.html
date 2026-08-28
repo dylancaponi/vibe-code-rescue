@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vibe Code Rescue: I fix broken Lovable, Bolt, v0, and Replit apps in 24 hours</title>
+<meta name="description" content="Your AI built app is stuck: blank screen, broken login, an error loop the tool cannot escape. I diagnose it for free, fix it, test it, and explain it in plain English. 24 hour turnaround.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="./">Vibe Code Rescue</a>
+    <nav>
+      <a href="fixes/lovable-blank-screen.html">Fix guides</a>
+      <a href="#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>Your AI built app was going great. Until it wasn't.</h1>
+<p class="lead">Now the tool is stuck in a loop, the same bug keeps coming back, and every fix breaks two other things. I rescue broken apps from Lovable, Bolt, v0, Replit, Cursor, and Base44. Diagnosed for free, fixed and tested within 24 hours, explained in plain English.</p>
+
+<a class="cta" href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis">Get a free diagnosis</a>
+<p class="note">Email a link to your repo (or a zip export) and one line about what is broken. You get back a plain English diagnosis, no charge, no obligation.</p>
+
+<h2>What I fix</h2>
+<ul>
+  <li>Apps stuck in an AI error loop, where every prompt makes it worse</li>
+  <li>Blank white screen after deploy or on a fresh clone</li>
+  <li>Broken login, signup, and auth flows</li>
+  <li>Supabase errors: data that saves but never shows up, permission denials, schema drift</li>
+  <li>Buttons and features that do nothing</li>
+  <li>Builds and installs that fail with errors the tool cannot explain</li>
+  <li>Half finished features the AI gave up on</li>
+</ul>
+
+<h2>Why the tool that built your app cannot fix it</h2>
+<p>Lovable, Bolt, and v0 generate code but never run it. They cannot open your app, click the button, or read the stack trace. When something breaks outside their happy path, they guess. After a week of guessing, your project chat is poisoned with wrong assumptions and every new fix is built on top of them.</p>
+<p>I do the opposite. I clone your app into a clean environment, run it, reproduce the exact failure, fix the real cause, and run it again to prove the fix. You get working code and a short note explaining what was wrong, in words you do not need to be a developer to understand.</p>
+
+<h2 id="case-study">A real rescue, measured</h2>
+<div class="card">
+<p>A campus delivery app built with Lovable worked on its owner's machine but rendered a pure white screen for anyone who cloned or deployed it. The build passed with zero errors. Nothing hinted why.</p>
+<p>The cause: the app crashed on a missing configuration value before React even started, so no error could ever appear. The fix took 3 files and 34 lines, verified in a headless browser before and after:</p>
+<table>
+  <tr><th>Build</th><th>What renders</th><th>What a user sees</th></tr>
+  <tr><td>Before</td><td>0 characters</td><td>Blank white page</td></tr>
+  <tr><td>After, unconfigured</td><td>Setup screen</td><td>Exact instructions to finish setup</td></tr>
+  <tr><td>After, configured</td><td>Full app</td><td>Identical to the production site</td></tr>
+</table>
+<p class="note">The fix was contributed back to the project as a public pull request: <a href="https://github.com/BUCKS10101/campus-link-dash/pull/11" rel="nofollow">see the code</a>. Read the full breakdown in <a href="fixes/lovable-blank-screen.html">the blank screen fix guide</a>.</p>
+</div>
+
+<h2>How it works</h2>
+<ul>
+  <li><strong>1. Send it.</strong> Email me a GitHub link or zip export and one line about the problem.</li>
+  <li><strong>2. Free diagnosis.</strong> I run your app in a clean room and reply with what is actually broken and whether it is fixable. If it is not worth fixing, I say so. You pay nothing for a shrug.</li>
+  <li><strong>3. The rescue.</strong> If you want the fix, I fix it, test it, and send it back with a plain English note. Basic and Standard turn around in 24 hours.</li>
+</ul>
+
+<h2>Pricing</h2>
+<div class="tiers">
+  <div class="tier">
+    <div class="name">Un-stick me</div>
+    <div class="price">$95</div>
+    <p>One bug or error fixed and tested, with a plain English explanation. 24 hours.</p>
+  </div>
+  <div class="tier">
+    <div class="name">Make it work</div>
+    <div class="price">$195</div>
+    <p>Up to 3 bugs fixed, or one unfinished feature completed. Includes cleanup of the files I touch. 24 hours.</p>
+  </div>
+  <div class="tier">
+    <div class="name">Make it real</div>
+    <div class="price">$395</div>
+    <p>Everything in Make it work plus production hardening: auth enforced, secrets out of the code, error handling, a working deploy, and a basic security pass. 48 hours.</p>
+  </div>
+</div>
+
+<h2>Common questions</h2>
+<h3>Which tools do you support?</h3>
+<p>Lovable, Bolt, v0, Base44, Replit, Cursor, Claude Code, and generally any React, Next.js, Python, or Node project an AI helped write.</p>
+<h3>What if you can't fix it?</h3>
+<p>Then you don't pay. The diagnosis is free either way, and I tell you plainly if the app is not worth rescuing.</p>
+<h3>Will you rebuild my whole app?</h3>
+<p>These packages are for fixing and finishing, not rebuilds. If you need a bigger scope, email me and I will quote it.</p>
+<h3>Is my code safe?</h3>
+<p>Yes. Your code runs in an isolated environment, is used only to fix your app, and access is removed after delivery.</p>
+
+<h2 id="diagnosis">Stuck right now?</h2>
+<a class="cta" href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis">Email me for a free diagnosis</a>
+<p class="note">Include a repo link or zip and one line about what is broken. Diagnosis replies usually go out the same day.</p>
+
+<h2>Fix guides</h2>
+<ul>
+  <li><a href="fixes/lovable-blank-screen.html">Lovable app shows a blank white screen? The usual cause and the fix</a></li>
+  <li><a href="fixes/npm-install-eresolve.html">npm install fails with ERESOLVE on your Lovable or Bolt export</a></li>
+  <li><a href="fixes/build-failed-cannot-find-tailwindcss.html">Build fails with "Cannot find module 'tailwindcss'" after exporting your AI built app</a></li>
+</ul>
+</main>
+<footer>
+  <div class="inner">Vibe Code Rescue. Broken AI built apps diagnosed free and fixed in 24 hours. <a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis">dylan.caponi@gmail.com</a></div>
+</footer>
+</body>
+</html>

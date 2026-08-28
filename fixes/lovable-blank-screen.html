@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lovable app shows a blank white screen? The usual cause and the fix</title>
+<meta name="description" content="Your Lovable app works in the editor but shows a blank white screen when you deploy it or clone it. The build passes with no errors. Here is the most common cause and the exact fix.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/lovable-blank-screen.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>Lovable app shows a blank white screen? The usual cause and the fix</h1>
+<p class="lead">Your app works inside Lovable. Then you deploy it somewhere else, or a collaborator clones it, and all anyone gets is a pure white page. The build passed with zero errors. Nothing in any log explains it. This is the single most common failure I see in Lovable and Bolt apps, and it almost always has the same cause.</p>
+
+<h2>The symptom</h2>
+<ul>
+  <li><code>npm install</code> and <code>npm run build</code> both succeed with no errors</li>
+  <li>The deployed site (or local <code>npm run dev</code>) shows a completely blank white page</li>
+  <li>There is no error message on screen, not even a broken layout, just nothing</li>
+  <li>It works fine inside Lovable itself, and often on the original owner's deployment</li>
+</ul>
+
+<h2>The cause: your app crashes before React starts</h2>
+<p>Lovable apps typically use Supabase, and the generated code usually contains a file like <code>src/lib/supabase.ts</code> or <code>src/integrations/supabase/client.ts</code> that reads two environment variables:</p>
+<pre><code>const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error("supabaseUrl is required.");
+}</code></pre>
+<p>Inside Lovable those variables are always injected, so this code never fails where the app was written. But Vite happily builds with the variables missing, it just inlines <code>undefined</code>. When someone opens the built app without them, the <code>throw</code> fires while the JavaScript bundle is still loading, before React mounts anything. Even if the app has an error boundary, it does not exist yet, so nothing can catch the crash. The page stays white.</p>
+<p>Most generated repos also ship no <code>.env.example</code> and no setup docs, so every fresh clone and every new deployment hits this wall with no clue why.</p>
+
+<h2>Confirm it in 30 seconds</h2>
+<p>Open the blank page in Chrome, press F12 to open DevTools, and look at the Console tab. If this is your problem you will see a red uncaught error mentioning <code>supabaseUrl is required</code>, <code>Missing Supabase</code>, or similar, thrown from a file with supabase in the name.</p>
+
+<h2>The quick fix</h2>
+<p>Set the two environment variables wherever the app runs:</p>
+<ul>
+  <li><strong>Locally:</strong> create a file named <code>.env</code> in the project root with <code>VITE_SUPABASE_URL=...</code> and <code>VITE_SUPABASE_ANON_KEY=...</code>. Both values are in your Supabase dashboard under Project Settings, then API.</li>
+  <li><strong>Vercel or Netlify:</strong> add the same two variables in the project's environment settings, then redeploy. Vite only reads them at build time, so a redeploy is required.</li>
+</ul>
+
+<h2>The real fix</h2>
+<p>The quick fix gets you unblocked, but the app is still a landmine for the next person who clones or deploys it. The durable fix is to stop crashing at import time:</p>
+<ul>
+  <li>In the supabase client file, replace the <code>throw</code> with an exported error value, and create the client with harmless placeholder values so the module always loads.</li>
+  <li>In <code>src/main.tsx</code>, check that error value before mounting. If configuration is missing, render a small setup screen that says exactly which two variables to set and where to find them. Otherwise mount the app normally.</li>
+  <li>Add a <code>.env.example</code> file documenting both variables.</li>
+</ul>
+<p>I made exactly this fix to a real Lovable campus delivery app that white-screened on every fresh clone: 3 files, 34 lines. Verified in a headless browser: before the fix the page rendered 0 characters; after it, an unconfigured clone renders a setup screen and a configured one renders the full app, pixel-identical to the production site. The change is public: <a href="https://github.com/BUCKS10101/campus-link-dash/pull/11" rel="nofollow">see the pull request</a>.</p>
+
+<h2>Still white after setting the variables?</h2>
+<p>Then you are probably in a different failure class: a routing basename mismatch, a crashed top-level component, or a build that silently outputs to the wrong directory. Those need the console error and the repo to diagnose.</p>
+<div class="card">
+<p><strong>Send it to me.</strong> Email a repo link or zip and one line about what is broken. I will run it in a clean room and tell you what is actually wrong, free, usually the same day. If you want it fixed, fixes start at $95 with 24 hour turnaround.</p>
+<a class="cta" href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis%20(blank%20screen)">Get a free diagnosis</a>
+</div>
+</main>
+<footer>
+  <div class="inner"><a href="../">Vibe Code Rescue</a>. Broken AI built apps diagnosed free and fixed in 24 hours.</div>
+</footer>
+</body>
+</html>

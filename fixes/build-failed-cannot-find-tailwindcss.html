@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Build fails with "Cannot find module 'tailwindcss'" in your AI built app: the fix</title>
+<meta name="description" content="Your Next.js or Vite app from v0, Bolt, or Lovable fails to build with Cannot find module 'tailwindcss', often inside next/font. Here is why the AI left the dependency out and how to fix it in two minutes.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/build-failed-cannot-find-tailwindcss.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>Build fails with "Cannot find module 'tailwindcss'" in your AI built app</h1>
+<p class="lead">Your app from v0, Bolt, Lovable, or Cursor runs fine in the tool, but <code>npm run build</code> fails with <code>Error: Cannot find module 'tailwindcss'</code>, in Next.js apps often wrapped in "An error occurred in next/font" followed by "Build failed because of webpack errors". The fix is usually one install command; the interesting part is why it happens.</p>
+
+<h2>Why the AI left the dependency out</h2>
+<p>Your code uses Tailwind everywhere: the class names are all over your components, and the config files (<code>tailwind.config.ts</code>, <code>postcss.config.js</code>) exist. But <code>tailwindcss</code> itself is missing from <code>package.json</code>. This happens because AI generators assemble projects from templates and edits; somewhere along the way the package list got regenerated without every package the code actually needs. The tool's own sandbox often has these packages preinstalled globally, so the error never appears until you build on a clean machine, which is exactly what Vercel, Netlify, and your laptop are.</p>
+<p>The <code>next/font</code> wrapper appears because in recent Next.js versions the font loader participates in the CSS pipeline, so it is the first thing to trip over the missing Tailwind and it gets blamed in the error message. The real culprit is the missing package, not your fonts.</p>
+<p>I found this exact case in a clean-room build sweep of publicly available AI built apps: a launch page app whose build failed with this error on every fresh clone. One in 16 swept apps had it, and its owner had no way to see it inside the tool.</p>
+
+<h2>The fix</h2>
+<p>Install what the config expects. Check which Tailwind major version your project is written for:</p>
+<ul>
+  <li>If <code>postcss.config</code> mentions <code>@tailwindcss/postcss</code>, or your CSS has <code>@import "tailwindcss"</code>, you are on Tailwind v4:</li>
+</ul>
+<pre><code>npm install -D tailwindcss @tailwindcss/postcss</code></pre>
+<ul>
+  <li>If you have a classic <code>tailwind.config.ts</code> with a <code>content</code> array and your CSS has the three <code>@tailwind base/components/utilities</code> lines, you are on v3:</li>
+</ul>
+<pre><code>npm install -D tailwindcss@^3 postcss autoprefixer</code></pre>
+<p>Then run <code>npm run build</code> again. If a different "Cannot find module" appears next, repeat: the project may be missing several packages, and each build failure names the next one. Two or three rounds usually clears it.</p>
+
+<h2>If the versions fight back</h2>
+<p>Mixing v3-style config with the v4 package (or the reverse) produces confusing errors like "trying to use tailwindcss directly as a PostCSS plugin". Match the package major version to the config style the AI wrote, do not modernize the config mid-rescue. Get the build green first, upgrade later if you want.</p>
+
+<h2>Build passes but the page is unstyled or blank?</h2>
+<p>Different failure class. Unstyled usually means the Tailwind content globs do not match your file layout. Blank white screen usually means a runtime crash before React mounts, most often missing environment variables: see <a href="lovable-blank-screen.html">the blank screen guide</a>.</p>
+
+<h2>Still stuck?</h2>
+<div class="card">
+<p><strong>Send it to me.</strong> Email a repo link or zip and the build output. I will build it in a clean room and tell you exactly what is missing, free, usually the same day. If you want it fixed and verified end to end, fixes start at $95 with 24 hour turnaround.</p>
+<a class="cta" href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis%20(build%20fails)">Get a free diagnosis</a>
+</div>
+</main>
+<footer>
+  <div class="inner"><a href="../">Vibe Code Rescue</a>. Broken AI built apps diagnosed free and fixed in 24 hours.</div>
+</footer>
+</body>
+</html>
