@@ -1,0 +1,77 @@
+name: diagnose
+on:
+  issues:
+    types: [opened]
+  repository_dispatch:
+    types: [diagnose-request]
+
+permissions:
+  issues: write
+  contents: read
+
+concurrency:
+  group: diagnose-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    if: github.event_name == 'repository_dispatch' || contains(github.event.issue.labels.*.name, 'diagnosis')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Untrusted input (issue body) is only ever read from an env var, never
+      # interpolated into shell. The diagnosis script itself parses the URL
+      # strictly and spawns processes without a shell.
+      - name: Extract target repo
+        id: target
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          DISPATCH_REPO: ${{ github.event.client_payload.repo }}
+        run: |
+          node -e '
+            const body = process.env.DISPATCH_REPO || process.env.ISSUE_BODY || "";
+            const m = body.match(/github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git|[\/\s)\]]|$)/);
+            if (!m || m[1] === "dylancaponi") { console.log("target="); }
+            else { console.log(`target=${m[1]}/${m[2]}`); }
+          ' >> "$GITHUB_OUTPUT"
+
+      - name: Reply if no valid repo URL found
+        if: steps.target.outputs.target == '' && github.event_name == 'issues'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment "${{ github.event.issue.number }}" --repo "${{ github.repository }}" --body \
+            "I could not find a public GitHub repo URL in your issue. Please edit the issue (or open a new one) with a full URL like https://github.com/you/your-app, or email dylan.caponi@gmail.com if the repo is private."
+
+      - name: Run diagnosis
+        if: steps.target.outputs.target != ''
+        id: run
+        continue-on-error: true
+        env:
+          TARGET: ${{ steps.target.outputs.target }}
+        run: |
+          node scripts/diagnose.mjs "$TARGET" --out report.md
+          echo "ok=1" >> "$GITHUB_OUTPUT"
+
+      - name: Post report
+        if: steps.target.outputs.target != '' && github.event_name == 'issues'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ steps.target.outputs.target }}
+        run: |
+          if [ -f report.md ]; then
+            gh issue comment "${{ github.event.issue.number }}" --repo "${{ github.repository }}" --body-file report.md
+            gh issue close "${{ github.event.issue.number }}" --repo "${{ github.repository }}" --comment \
+              "Diagnosis complete, report above. Want it fixed? Reply here or email dylan.caponi@gmail.com with the subject \"rescue diagnosis\" and mention this issue."
+          else
+            gh issue comment "${{ github.event.issue.number }}" --repo "${{ github.repository }}" --body \
+              "The automated diagnosis could not complete on $TARGET (most often: the repo is private, empty, or not a JavaScript project). A human will take a look; you can also email dylan.caponi@gmail.com."
+          fi

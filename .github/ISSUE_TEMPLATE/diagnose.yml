@@ -1,0 +1,26 @@
+name: Free instant diagnosis
+description: Paste your public GitHub repo URL and get an automated diagnosis report as a comment, usually within a few minutes.
+title: "Diagnose my app"
+labels: ["diagnosis"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This works for public GitHub repos built with Lovable, Bolt, v0, Replit, Cursor, or any Vite/Next.js app.
+        A bot clones your repo in a clean sandbox, tries to install, build, and render it, and posts a plain English report here.
+        Note: this issue and the report are public. If your repo is private, email dylan.caponi@gmail.com instead.
+  - type: input
+    id: repo_url
+    attributes:
+      label: GitHub repository URL
+      description: The public repo of the app that is broken (for example https://github.com/you/your-app)
+      placeholder: https://github.com/you/your-app
+    validations:
+      required: true
+  - type: textarea
+    id: symptom
+    attributes:
+      label: What is going wrong? (optional)
+      description: One or two sentences. Blank screen, build error, login loop, data not showing, anything.
+    validations:
+      required: false
