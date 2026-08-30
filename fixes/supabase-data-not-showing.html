@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Supabase data saves but never shows up in your Lovable or Bolt app: the fix</title>
+<meta name="description" content="Your AI built app inserts rows into Supabase fine, but selects come back empty, or data only shows for the user who created it. This is almost always Row Level Security policies. Here is how to diagnose and fix it.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/supabase-data-not-showing.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>Your app saves data to Supabase, but it never shows up</h1>
+<p class="lead">You built an app with Lovable, Bolt, or v0 on top of Supabase. Submitting a form works, no errors anywhere, and you can even see the row in the Supabase dashboard. But the app itself shows nothing. Or worse: it works perfectly for you and shows an empty screen for every other user. Your data is fine. Your Row Level Security policies are not.</p>
+
+<h2>Why this happens to AI built apps specifically</h2>
+<p>Supabase tables can have Row Level Security (RLS) turned on. When it is on, every read and write is checked against per-table policies, and a table with RLS enabled and no matching policy silently returns zero rows. Not an error, just nothing. AI app builders create your tables and often enable RLS (or Supabase prompts you to), but they routinely forget to write the policies, write a policy for insert but not select, or write a select policy that checks <code>auth.uid() = user_id</code> on rows where <code>user_id</code> was never filled in. The insert succeeds, the select filters everything out, and no error appears anywhere.</p>
+
+<h2>Confirm it in two minutes</h2>
+<ol>
+  <li>Open your deployed app, press F12 for devtools, and watch the Network tab while the empty page loads. Find the request to <code>rest/v1/your_table</code>. If it returns status 200 with an empty array <code>[]</code>, this is RLS. (A 401 or 403 also points at policies, or a missing anon key.)</li>
+  <li>In the Supabase dashboard, open Table Editor and confirm the rows exist. If the dashboard shows data the app cannot see, that is the signature: the dashboard bypasses RLS, your app does not.</li>
+  <li>Go to Authentication, then Policies (or Table Editor, select the table, then the RLS badge). Look at what policies exist for the table, per operation.</li>
+</ol>
+
+<h2>The fix</h2>
+<p>Write explicit policies for each operation the app performs on each table. In the Supabase SQL editor, for a table where every signed in user may read everything:</p>
+<pre><code>create policy "Authenticated users can read"
+on public.your_table for select
+to authenticated
+using (true);</code></pre>
+<p>For a table where users should only see their own rows:</p>
+<pre><code>create policy "Users read own rows"
+on public.your_table for select
+to authenticated
+using (auth.uid() = user_id);</code></pre>
+<p>Two traps to check while you are in there:</p>
+<ul>
+  <li><strong>The null user_id trap.</strong> If your select policy checks <code>auth.uid() = user_id</code>, verify the insert actually sets <code>user_id</code>. AI builders often omit it, so every row has null and matches nobody. Either set it in the insert code, or give the column a default of <code>auth.uid()</code>.</li>
+  <li><strong>Public pages need an anon policy.</strong> A policy granted <code>to authenticated</code> returns nothing for logged out visitors. If a page should be public, the policy needs <code>to anon, authenticated</code>.</li>
+</ul>
+<p>Then test with two different accounts, not just your own. "Works for me, empty for everyone else" is exactly what a half written policy looks like, and one test user cannot catch it.</p>
+
+<h2>Do not do this</h2>
+<p>Disabling RLS makes the symptom disappear and publishes your entire table to anyone with your project URL and anon key, both of which ship inside your frontend bundle. The AI tool may even suggest it when you paste the symptom back into the chat. It is not a fix, it is an incident waiting for traffic.</p>
+
+<h2>Still stuck?</h2>
+<div class="card">
+<p><strong>Run the instant diagnosis.</strong> Paste your public repo URL into the form and an automated clean-room check reports what is broken: install, build, render, and config, with the exact blocker named, in minutes, free. RLS policies live in your Supabase project rather than your code, so for this one also paste the failing request from your Network tab into the issue and I will look at it the same day. Private repo or zip? Email works too.</p>
+<a class="cta" href="https://github.com/dylancaponi/vibe-code-rescue/issues/new?template=diagnose.yml">Get an instant free diagnosis</a>
+<p class="note"><a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis%20(data%20not%20showing)">Or email me instead</a>. Fixes with 24 hour turnaround start at $95.</p>
+</div>
+</main>
+<footer>
+  <div class="inner"><a href="../">Vibe Code Rescue</a>. Broken AI built apps diagnosed free and fixed in 24 hours.</div>
+</footer>
+</body>
+</html>

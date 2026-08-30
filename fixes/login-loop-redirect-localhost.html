@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Login loop or redirect to localhost after deploying your Lovable or Bolt app: the fix</title>
+<meta name="description" content="Your AI built app's login worked in preview, but the deployed site loops back to the login page, or the confirmation email links to localhost:3000. Here is why Supabase auth breaks on deploy and how to fix it.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/login-loop-redirect-localhost.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>Login loop, or your signup email points at localhost</h1>
+<p class="lead">Auth worked fine while you were building in Lovable, Bolt, or v0. Then you deployed to your real domain and one of these started: login succeeds and instantly bounces you back to the login page; the "confirm your email" link opens <code>localhost:3000</code> and dies; or Google sign in returns you to the wrong site. Nothing is wrong with your auth code. Your Supabase project still thinks the app lives at its old address.</p>
+
+<h2>Why deploying breaks auth</h2>
+<p>Supabase auth does not trust the page that asks for a redirect. It only ever sends users, confirmation links, and OAuth callbacks to URLs on an allowlist stored in your Supabase project settings. While you were building, the AI tool set that allowlist to its own preview URL or localhost. Your deployed domain is not on the list, so Supabase falls back to the old Site URL. The tool that generated your app cannot see this setting, which is why asking it to fix the login loop goes in circles: the bug is not in the code it can edit.</p>
+
+<h2>The five minute fix</h2>
+<ol>
+  <li>Open your Supabase dashboard, pick your project, then Authentication, then URL Configuration.</li>
+  <li>Set <strong>Site URL</strong> to your real deployed address, for example <code>https://yourapp.vercel.app</code> or your custom domain. Exact protocol and host, no trailing path needed.</li>
+  <li>Add your deployed address to <strong>Redirect URLs</strong>. If you still develop locally, also keep <code>http://localhost:3000</code> (or whatever port you use) in the list. Wildcards like <code>https://*-yourteam.vercel.app/**</code> are allowed if you use Vercel preview deploys.</li>
+  <li>If you use Google or GitHub sign in, also check that provider's console: the OAuth callback must be your Supabase project callback (<code>https://YOURPROJECT.supabase.co/auth/v1/callback</code>), which does not change per deploy, so it is usually fine. The redirect problem is almost always on the Supabase side.</li>
+  <li>Send yourself a fresh signup email and click it. Links in old emails still point at the old URL, so test with a new one.</li>
+</ol>
+
+<h2>If it still loops after the URLs are right</h2>
+<ul>
+  <li><strong>The session never persists.</strong> Watch devtools, Application tab, Local Storage. If the <code>sb-...-auth-token</code> entry appears on login and vanishes on redirect, the code is creating more than one Supabase client, or a misused <code>onAuthStateChange</code> handler is signing you out. One shared client instance, created once, fixes most of these.</li>
+  <li><strong>The route guard runs before the session loads.</strong> AI builders love a guard that redirects to <code>/login</code> whenever <code>user</code> is null. On a hard page load the session takes a moment to restore, so the guard fires first and you loop. The guard has to wait for the auth state to finish loading before deciding.</li>
+  <li><strong>Missing env vars on the deploy.</strong> If the deployed site cannot reach Supabase at all (check the Network tab for failing requests to <code>supabase.co</code>), your hosting platform is missing <code>VITE_SUPABASE_URL</code> and the anon key. Preview environments do not export their env vars with your code.</li>
+</ul>
+
+<h2>Still stuck?</h2>
+<div class="card">
+<p><strong>Run the instant diagnosis.</strong> Paste your public repo URL into the form and an automated clean-room check reports what is broken: install, build, missing env config, and render, with the exact blocker named, in minutes, free. Auth URL settings live in your Supabase dashboard rather than the repo, so for this one also describe what loops where and I will look the same day. Private repo or zip? Email works too.</p>
+<a class="cta" href="https://github.com/dylancaponi/vibe-code-rescue/issues/new?template=diagnose.yml">Get an instant free diagnosis</a>
+<p class="note"><a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis%20(login%20loop)">Or email me instead</a>. Fixes with 24 hour turnaround start at $95.</p>
+</div>
+</main>
+<footer>
+  <div class="inner"><a href="../">Vibe Code Rescue</a>. Broken AI built apps diagnosed free and fixed in 24 hours.</div>
+</footer>
+</body>
+</html>
