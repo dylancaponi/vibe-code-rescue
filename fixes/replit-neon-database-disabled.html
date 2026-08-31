@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Replit disabled your database and your app is down (Neon error 28000): the fix</title>
+<meta name="description" content="Your Replit app is down with Neon Postgres error 28000, role is disabled. Your data is not gone. Here is how to confirm it, get an export, and get back up.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/replit-neon-database-disabled.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>Replit disabled your database and now your app is down</h1>
+<p class="lead">Your Replit app ran fine for months, then every page that touches the database started failing. The logs show Postgres error 28000, or the words "role is disabled". The Replit AI agent keeps rewriting code and nothing changes. This is not a code problem. Replit's built-in database is Neon Postgres under the hood, and Replit has disabled your database endpoint or role at the account level. Disabled, not deleted. That distinction is the whole game: your data is still sitting there, and you have a recovery path.</p>
+
+<h2>Why this happens</h2>
+<p>Replit disables database endpoints for plan or billing issues, abuse flags, or resource policy changes. It can hit apps that were running fine for months, with no code change on your side. Error 28000 (invalid_authorization_specification) on connect means the server rejected the role or endpoint itself, which is exactly what a disable looks like. The in-app AI agent cannot fix this because it is an account-level action, not something in your repo. In a real case in August 2026, a client's production app sat down for two days while the agent kept "fixing" perfectly good code.</p>
+
+<h2>Confirm it in two minutes</h2>
+<ol>
+  <li>Open your deployment logs and find the exact error: <code>28000</code>, "role is disabled", or connections refused specifically on the database while everything else runs.</li>
+  <li>Check your Replit account email for billing or policy notices. Disables usually come with one, sometimes buried.</li>
+  <li>Connect with any Postgres client (psql, TablePlus, anything) using the same <code>DATABASE_URL</code> from your Replit secrets. The same 28000 outside the app confirms it is the endpoint, not your code.</li>
+</ol>
+
+<h2>The fix, in order</h2>
+<ol>
+  <li><strong>Open a Replit support ticket now, before anything else.</strong> Ask for two things explicitly: reactivation of the database, or failing that, a pg_dump export of it. Say the data is business critical. Support queues are slow, so this goes first and everything else happens while you wait.</li>
+  <li><strong>Export the moment you can.</strong> If the endpoint is only rate-disabled, or you regain temporary access after fixing billing, run the export immediately: <pre><code>pg_dump "$DATABASE_URL" &gt; backup.sql</code></pre> Do not do anything else with the window. Take the export first.</li>
+  <li><strong>Restore into a database you own.</strong> Create a free-tier account directly at neon.tech, which takes minutes, then: <pre><code>psql "$NEW_DATABASE_URL" &lt; backup.sql</code></pre> Update <code>DATABASE_URL</code> in your Replit secrets and redeploy. It is the same Postgres and the same driver, so nothing else in the app changes.</li>
+</ol>
+
+<h2>The lesson</h2>
+<p>Platform risk and data risk should never live in the same account. Keep the app on Replit if you like it, but own the database directly, with your own login at Neon, Supabase, or anywhere else. Then set up a nightly <code>pg_dump</code>, as a cron job or a scheduled deployment, so the worst case is losing one day of data instead of everything. If your only copy of production data sits behind someone else's billing system, you do not really own it.</p>
+
+<h2>Do not do this</h2>
+<p>Do not delete and recreate the Replit database, or the app itself, hoping it resets something. Disabled means recoverable; deleted means gone. If the data matters, every action you take before the export is in hand should be about getting the export. Reactivation, workarounds, and rebuilds all come after.</p>
+
+<h2>Still stuck?</h2>
+<div class="card">
+<p><strong>Run the instant diagnosis.</strong> Paste your public repo URL into the form and an automated clean-room check reports what is broken: install, build, render, and config, with the exact blocker named, in minutes, free. A disabled database lives in your Replit account rather than your code, so for this one also paste the exact log error into the issue and I will look at it the same day. Private repo or zip? Email works too.</p>
+<a class="cta" href="https://github.com/dylancaponi/vibe-code-rescue/issues/new?template=diagnose.yml">Get an instant free diagnosis</a>
+<p class="note"><a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis%20(database)">Or email me instead</a>. Fixes with 24 hour turnaround start at $95.</p>
+</div>
+</main>
+<footer>
+  <div class="inner"><a href="../">Vibe Code Rescue</a>. Broken AI built apps diagnosed free and fixed in 24 hours.</div>
+</footer>
+</body>
+</html>

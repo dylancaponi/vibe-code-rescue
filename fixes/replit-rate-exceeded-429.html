@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your deployed Replit app shows Rate exceeded (429) to visitors: the fix</title>
+<meta name="description" content="Visitors to your Replit Autoscale deployment see a bare Rate exceeded page with a 429 status. It comes from Replit's edge, not your code. Here is the fix.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/replit-rate-exceeded-429.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>Your deployed Replit app shows Rate exceeded (429) to visitors</h1>
+<p class="lead">You built and deployed an app on Replit. It worked for weeks. Then visitors started seeing a bare page that says Rate exceeded with a 429 status, sometimes intermittently, sometimes for everyone. You did not add rate limiting. Your code did not change. That is because the error is not coming from your code at all.</p>
+
+<h2>The key insight: it is Replit's edge, not your app</h2>
+<p>A bare Rate exceeded page with a 429 status comes from Replit's edge infrastructure, sitting in front of your deployment. Your app never even saw the request. Two tell-tales confirm it: the response is plain text or a bare error page with none of your app's HTML, and nothing appears in your app's logs for those requests. If either is true, stop debugging your code.</p>
+
+<h2>Why this happens to AI built apps specifically</h2>
+<p>Replit Autoscale deployments have per-deployment settings for machine power and how many machines can run. The defaults are sized for hobby traffic, and AI builders never touch them. The moment the site gets real traffic, the edge starts shedding requests with 429 before they ever reach the app. It does not even take real users: in 2026, anything content shaped like a news site gets hammered by AI scrapers and bots, and that traffic alone can push a default-sized deployment over its limit.</p>
+
+<h2>Confirm it in two minutes</h2>
+<ol>
+  <li>Open the failing URL, press F12 for devtools, and check the Network tab. Look at the 429 response body and headers. No app HTML in the body means edge, not app.</li>
+  <li>Open your deployment logs in Replit. The 429ed requests are absent. Your app cannot log requests it never received.</li>
+  <li>Open your Autoscale deployment settings and note the machine size and max machine count. If they are still at defaults, you have found it.</li>
+</ol>
+
+<h2>The fix</h2>
+<p>Raise the Autoscale machine settings in your deployment configuration: bump the machine power and the max machine count, then redeploy. In a real case from August 2026, scaling the machines up stopped the 429s immediately, no code changes at all. The tradeoff is real: bigger machines and more of them raise your Replit bill, which is why you should pair this with the next step.</p>
+
+<h2>Strongly recommended: put free Cloudflare in front</h2>
+<p>Point your own domain at the deployment through Cloudflare's free tier. You get three things Replit does not give you:</p>
+<ul>
+  <li><strong>Your own edge logs.</strong> You can finally see who is hammering the site, instead of guessing from a bill.</li>
+  <li><strong>Caching.</strong> Repeat traffic gets served from Cloudflare and never hits Replit at all, which lowers the autoscale bill you just raised.</li>
+  <li><strong>Bot filtering.</strong> Block or challenge AI scrapers and bad bots before they count against your deployment.</li>
+</ul>
+<p>It also makes your app portable. The domain is yours, not Replit's, so if you ever move hosts, your visitors and your search rankings come with you.</p>
+
+<h2>Do not do this</h2>
+<p>Do not spend hours adding rate-limiting middleware or retry logic to your app code. The requests never reach your code, so nothing you write there can help. And do not assume it is a Replit outage and sit in the support queue; support is slow, and this is almost always your deployment settings, which you can check and change yourself in minutes.</p>
+
+<h2>Still stuck?</h2>
+<div class="card">
+<p><strong>Run the instant diagnosis.</strong> Paste your public repo URL into the form and an automated clean-room check reports what is broken: install, build, render, and config, with the exact blocker named, in minutes, free. Deployment settings live in your Replit account rather than your code, so for this one also paste the 429 response headers from your Network tab into the issue and I will look at it the same day. Private repo or zip? Email works too.</p>
+<a class="cta" href="https://github.com/dylancaponi/vibe-code-rescue/issues/new?template=diagnose.yml">Get an instant free diagnosis</a>
+<p class="note"><a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis%20(rate%20exceeded)">Or email me instead</a>. Fixes with 24 hour turnaround start at $95.</p>
+</div>
+</main>
+<footer>
+  <div class="inner"><a href="../">Vibe Code Rescue</a>. Broken AI built apps diagnosed free and fixed in 24 hours.</div>
+</footer>
+</body>
+</html>

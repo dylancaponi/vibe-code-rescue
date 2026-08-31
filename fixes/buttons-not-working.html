@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Buttons in your Lovable, Bolt, or v0 app do nothing when clicked: the fix</title>
+<meta name="description" content="A button in your AI built app does nothing when you click it. The console tells you which of three failures it is in two minutes. Here is how to read it and fix each one.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/buttons-not-working.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>Buttons in your app do nothing when you click them</h1>
+<p class="lead">You built an app with Lovable, Bolt, or v0. It looks finished. Then you click Save, or Submit, or Delete, and nothing happens. No error, no spinner, no change. The button is real, it just is not connected to anything, or it is connected to something that fails silently. Both are fixable once you know which one you have.</p>
+
+<h2>Why this happens to AI built apps specifically</h2>
+<p>AI app builders render the visual layer first and the logic layer second. If the chat session moved on before the second part happened, you get a perfect looking button wired to a stub: an onClick whose entire body is a <code>console.log</code> or a <code>// TODO: implement</code> comment. The other common case is a handler that was implemented but crashes or fails a backend call the moment it runs. Either way the app compiles, deploys, and looks done, so nothing warns you until you click.</p>
+
+<h2>Confirm it in two minutes</h2>
+<p>Open the app, press F12 for devtools, select the Console tab, and click the dead button once. You will see one of three signatures:</p>
+<ol>
+  <li><strong>A red error appears on click.</strong> The handler is real and it is crashing. Usually it is reading a property of undefined because state or backend data never loaded before the click.</li>
+  <li><strong>Nothing at all in Console, and nothing new in the Network tab.</strong> The handler is a stub, or the click never reaches the button in the first place.</li>
+  <li><strong>The whole page reloads.</strong> The button sits inside a form without <code>type="button"</code> and without <code>preventDefault</code>. The click triggers a native form submit, and the reload throws away all your state before the handler can finish.</li>
+</ol>
+
+<h2>The fix, per signature</h2>
+<ul>
+  <li><strong>Red error on click.</strong> Scroll the console up and read the first error, not the last. The last error is usually fallout from the first. A "cannot read properties of undefined" points at a missing null check or a backend call that failed earlier in the page load. Fix the source: add the null check, or fix the failed request that left the data empty.</li>
+  <li><strong>Silence.</strong> Search the code for the button's label text and find the component. Check the onClick body actually does something beyond logging. If the handler looks real but the console stays silent, the click is not reaching the button: some full-screen div is sitting on top of it. Add a temporary <code>console.log</code> at the top of the handler to prove it, then fix the overlay with <code>pointer-events: none</code> on the covering element or a z-index change.</li>
+  <li><strong>Page reload.</strong> Add <code>type="button"</code> to any button inside a form that should not submit it, or call <code>e.preventDefault()</code> at the top of the submit handler.</li>
+</ul>
+<p>One more silent failure worth checking: an async handler whose backend call rejects and nobody hears it. An empty <code>catch</code> block, or no catch at all, swallows the failure completely. The click "works", the save never happens. Open the Network tab, click again, and look for a red request. If you find one, the button was never the problem, the API call was.</p>
+
+<h2>Do not do this</h2>
+<p>Do not keep pasting "the button doesn't work" into the AI chat. After a few rounds the chat context is poisoned: the model keeps rewriting the same component in slightly different ways without ever finding the cause, because you have not given it the cause. Paste the console error verbatim instead. If there is no error, say exactly that: "clicking Save produces nothing in the console and no network request." If the chat has already spun in circles, start a fresh chat with just the error and the component name.</p>
+
+<h2>Still stuck?</h2>
+<div class="card">
+<p><strong>Run the instant diagnosis.</strong> Paste your public repo URL into the form and an automated clean-room check reports what is broken: install, build, render, and config, with the exact blocker named, in minutes, free. If the button's console output confused you, paste it into the issue too and I will read it the same day. Private repo or zip? Email works too.</p>
+<a class="cta" href="https://github.com/dylancaponi/vibe-code-rescue/issues/new?template=diagnose.yml">Get an instant free diagnosis</a>
+<p class="note"><a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis%20(buttons)">Or email me instead</a>. Fixes with 24 hour turnaround start at $95.</p>
+</div>
+</main>
+<footer>
+  <div class="inner"><a href="../">Vibe Code Rescue</a>. Broken AI built apps diagnosed free and fixed in 24 hours.</div>
+</footer>
+</body>
+</html>

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>App works locally but shows 404 or a blank page on Vercel or Netlify: the fix</title>
+<meta name="description" content="Your Lovable, Bolt, or v0 app runs fine locally, then deploys to Vercel or Netlify as a 404 or blank page. It is one of three configs: SPA rewrites, env vars, or the publish directory.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/works-locally-404-after-deploy.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>Your app works locally, but the deploy is a 404 or a blank page</h1>
+<p class="lead">You built an app with Lovable, Bolt, or v0. On your machine it runs perfectly. Then you deploy to Vercel or Netlify and get "404: NOT_FOUND", "Page not found", or a blank white screen. Nothing is wrong with your app. It is missing one small piece of production config that the AI never wrote into the repo.</p>
+
+<h2>Why this happens to AI built apps specifically</h2>
+<p>These tools generate Vite single page apps. The Vite dev server quietly handles everything: it serves <code>index.html</code> for every route, reads your <code>.env</code> file live, and never needs a build folder. Production hosts do none of that automatically. They need explicit config, and the AI builds an app that works in its own preview, then stops. Three different symptoms come out of this, each with its own one-line fix. Figure out which one you have.</p>
+
+<h2>Symptom 1: home page works, refresh on a subpage gives 404</h2>
+<p>The home page loads, clicking around works, but refreshing on <code>/dashboard</code> or opening a shared link goes straight to 404. Cause: missing SPA rewrites. Your routes only exist in JavaScript, so the host must serve <code>index.html</code> for every path and let the app take over. On Vercel, add a <code>vercel.json</code> in the repo root:</p>
+<pre><code>{"rewrites": [{"source": "/(.*)", "destination": "/index.html"}]}</code></pre>
+<p>On Netlify, add a file at <code>public/_redirects</code> containing exactly:</p>
+<pre><code>/* /index.html 200</code></pre>
+<p>Commit, push, redeploy. Refreshing any route now works.</p>
+
+<h2>Symptom 2: every page is blank in production, fine locally</h2>
+<p>Cause: environment variables. Vite inlines <code>import.meta.env.VITE_*</code> values at build time, and the <code>.env</code> file on your laptop never gets uploaded. So production builds with those values undefined, the app throws on startup, and you get a blank page (press F12 and check the console to confirm). Set the variables in the host dashboard: on Vercel under Settings then Environment Variables, on Netlify under Site configuration then Environment variables. Then redeploy. Setting them is not enough on its own, because they are baked in at build, not read at runtime. Two traps: only variables prefixed <code>VITE_</code> reach the frontend, and a typo in the name fails silently.</p>
+
+<h2>Symptom 3: everything 404s, even the home page</h2>
+<p>The deploy log says success, but every URL including <code>/</code> returns 404 or a directory listing. Cause: wrong publish directory. Vite outputs to <code>dist</code>, not <code>build</code>, and hosts sometimes guess wrong or inherit a stale setting. Check the build settings on the host: build command <code>npm run build</code>, output directory <code>dist</code>. Fix, redeploy, done.</p>
+
+<h2>One more thing to check</h2>
+<p>Open <code>vite.config.ts</code> and look for a <code>base</code> option like <code>base: "/my-app/"</code>. That usually comes from a GitHub Pages experiment, and on Vercel or Netlify it breaks every asset path, so the page loads but scripts and styles 404. On those hosts <code>base</code> should be <code>"/"</code> or removed entirely.</p>
+
+<h2>Do not do this</h2>
+<p>Do not delete the project and redeploy over and over, and do not let the AI chat talk you into switching hosts when you paste the error back in. All three symptoms are one missing config file or setting away from fixed, and a fresh deploy without that config fails the exact same way.</p>
+
+<h2>Still stuck?</h2>
+<div class="card">
+<p><strong>Run the instant diagnosis.</strong> Paste your public repo URL into the form and an automated clean-room check reports what is broken: install, build, render, and config, with the exact blocker named, in minutes, free. It specifically detects missing SPA rewrites and missing env examples, so this exact class of deploy failure gets caught automatically. Private repo or zip? Email works too.</p>
+<a class="cta" href="https://github.com/dylancaponi/vibe-code-rescue/issues/new?template=diagnose.yml">Get an instant free diagnosis</a>
+<p class="note"><a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis%20(deploy)">Or email me instead</a>. Fixes with 24 hour turnaround start at $95.</p>
+</div>
+</main>
+<footer>
+  <div class="inner"><a href="../">Vibe Code Rescue</a>. Broken AI built apps diagnosed free and fixed in 24 hours.</div>
+</footer>
+</body>
+</html>
