@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Netlify build fails but the app works locally: the six real causes and fixes</title>
+<meta name="description" content="Your Lovable, Bolt, or v0 app runs fine with npm run dev, but the Netlify or Vercel build fails. It is one of six things: case-sensitive imports, missing env vars, devDependencies, Node version, a stale lockfile, or TypeScript errors.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/netlify-build-fails-works-locally.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>Netlify build fails but your app works locally</h1>
+<p class="lead">You built an app with Lovable, Bolt, v0, or Cursor. On your machine <code>npm run dev</code> works perfectly. Then Netlify (or Vercel) tries to build it and fails. "It works on my machine" is not a coincidence here. The build machine is a clean Linux box that installs everything from scratch and runs the strict production build, and your laptop is neither clean nor strict. That gap has six known causes, and your deploy log tells you which one you have.</p>
+
+<h2>First: read the right line of the log</h2>
+<p>Open the failed deploy in Netlify (Deploys, click the failed one) or Vercel and read the full log. Do not read only the last line. The last line is almost always a generic wrapper like "Build script returned non-zero exit code: 2" or "Command failed with exit code 1", which tells you nothing. Scroll up to the <strong>first</strong> line that says <code>Error</code>, <code>error TS</code>, <code>Cannot find module</code>, or <code>not found</code>. That first error is the real one. Everything after it is fallout.</p>
+<p>Then reproduce it locally the way the build machine sees it, in a clean clone:</p>
+<pre><code>git clone &lt;your-repo-url&gt; fresh-copy
+cd fresh-copy
+npm ci
+npm run build</code></pre>
+<p>If this fails on your machine too, you can fix and retest in seconds instead of pushing guesses at Netlify. If it passes locally but still fails on Netlify, you are looking at cause 1 (file name case) or cause 4 (Node version), because those are the two things a clean clone on a Mac still cannot reproduce.</p>
+
+<h2>Cause 1: file name case (the Mac vs Linux trap)</h2>
+<p>Log line: <code>Cannot find module './Button'</code> or <code>Could not resolve "./components/Header"</code>, for a file you can see right there in your project.</p>
+<p>Your Mac's filesystem is case-insensitive, so <code>import Button from './Button'</code> happily finds <code>button.tsx</code>. Netlify and Vercel build on Linux, which is case-sensitive, so the same import fails. AI tools produce this constantly because they rename components across edits and the mismatch never surfaces locally.</p>
+<p>Fix: make the import match the file name exactly, capital for capital. Search your project for the module named in the error and compare spelling character by character.</p>
+<p>One extra trap: git itself may have recorded the wrong case, so the file looks right on your disk but is committed as <code>button.tsx</code>. A plain rename does nothing because git considers it the same file. Force git to see the case change with a two-step rename:</p>
+<pre><code>git mv src/components/button.tsx src/components/Button2.tsx
+git mv src/components/Button2.tsx src/components/Button.tsx
+git commit -m "Fix file name casing"</code></pre>
+<p>Push and redeploy. You can catch every future instance by setting <code>git config core.ignorecase false</code> in the repo.</p>
+
+<h2>Cause 2: missing environment variables at build time</h2>
+<p>Log line: something like <code>TypeError: Cannot read properties of undefined</code> during a prerender or "Collecting page data" step, or <code>supabaseUrl is required</code>, or a crash inside a client library's constructor.</p>
+<p>Your <code>.env</code> file lives on your laptop and is (correctly) not committed, so the build machine has none of those values. Vite bakes <code>import.meta.env.VITE_*</code> in at build time, and Next.js reads <code>process.env.NEXT_PUBLIC_*</code> during prerendering, so an undefined value can crash the build itself, not just the running app.</p>
+<p>Fix: set every variable your app needs in the host dashboard. On Netlify: Site configuration, then Environment variables. On Vercel: Project Settings, then Environment Variables. Copy names exactly from your local <code>.env</code>, including the <code>VITE_</code> or <code>NEXT_PUBLIC_</code> prefix. Then trigger a new deploy. Adding variables does not rebuild anything by itself, and the old failed build never sees them.</p>
+
+<h2>Cause 3: build tools in devDependencies (or the reverse)</h2>
+<p>Log line: <code>sh: 1: vite: not found</code>, <code>tsc: not found</code>, or <code>Cannot find module 'tailwindcss'</code>.</p>
+<p>Your <code>package.json</code> has two dependency lists. If <code>NODE_ENV=production</code> is set as an environment variable, or the install command is <code>npm ci --omit=dev</code> or <code>npm install --production</code>, the build machine skips <code>devDependencies</code> entirely. If <code>vite</code>, <code>typescript</code>, or <code>tailwindcss</code> live there, the tools that run the build were never installed.</p>
+<p>Fix, pick one:</p>
+<ul>
+  <li>Remove <code>NODE_ENV=production</code> from the host's environment variables (you almost never need to set it yourself; the build sets it where it matters), and make sure the install command is plain <code>npm ci</code> or <code>npm install</code>.</li>
+  <li>Or move the build tools into <code>dependencies</code>: <code>npm install vite typescript tailwindcss --save-prod</code> (adjust to the packages actually named in your errors).</li>
+</ul>
+<p>If the missing module is specifically Tailwind, there is a deeper version to this problem: <a href="build-failed-cannot-find-tailwindcss.html">the Tailwind missing module guide</a>.</p>
+
+<h2>Cause 4: Node version mismatch</h2>
+<p>Log line: <code>error: Unsupported engine</code>, <code>The engine "node" is incompatible with this module</code>, a crash mentioning <code>node:</code> internals, or a syntax error on modern code that your local Node handles fine.</p>
+<p>Your laptop might run Node 22 while the build image defaults to something else, and some packages hard-require a version range. Pin the version you actually use locally (check with <code>node --version</code>). Three ways, any one works:</p>
+<ul>
+  <li>Add a <code>.nvmrc</code> file in the repo root containing just the version, for example <code>22</code>. Netlify and Vercel both respect it.</li>
+  <li>On Netlify, set the environment variable <code>NODE_VERSION</code> to <code>22</code> in Site configuration, then Environment variables.</li>
+  <li>Add an engines field to <code>package.json</code>: <code>"engines": { "node": "22.x" }</code>. Vercel uses this to pick the version.</li>
+</ul>
+<p>Commit, push, redeploy.</p>
+
+<h2>Cause 5: lockfile out of sync, or peer dependency conflicts</h2>
+<p>Log line: <code>npm ci can only install packages when your package.json and package-lock.json are in sync</code>, or <code>npm error code ERESOLVE</code> with "unable to resolve dependency tree".</p>
+<p>This one hides locally because your <code>node_modules</code> folder is months of accumulated installs, and whatever is in there keeps working even when the lockfile no longer matches <code>package.json</code>. The build machine starts from nothing, so the mismatch or the conflict bites immediately. AI tools cause it by editing <code>package.json</code> directly without running an install.</p>
+<p>Fix for the sync error: run <code>npm install</code> locally to regenerate the lockfile, then commit the updated <code>package-lock.json</code> and push.</p>
+<p>Fix for ERESOLVE: the log names the two packages that disagree. Update the one that is behind (often a plugin that has not caught up with your framework's major version). If you need the deploy green today, adding <code>legacy-peer-deps=true</code> to a <code>.npmrc</code> file in the repo root makes npm tolerate the conflict, but treat that as a bandage and fix the versions when you can.</p>
+<p>Either way, verify with the clean-clone <code>npm ci</code> and <code>npm run build</code> from the top of this page before pushing.</p>
+
+<h2>Cause 6: TypeScript errors that dev mode ignores</h2>
+<p>Log line: <code>error TS2339: Property 'x' does not exist on type</code>, <code>error TS2322: Type 'string' is not assignable</code>, or a Next.js "Failed to compile" with "Type error:" underneath.</p>
+<p>The dev server transpiles TypeScript without checking types, so a type error is just a red squiggle you may never have seen. The production build runs the real type check and refuses to ship. Vibe-coded projects accumulate these because each AI edit is locally plausible but the types drift across files.</p>
+<p>Fix: run <code>npm run build</code> locally, fix each reported error, repeat until it passes. The errors come with exact file and line numbers, so paste them one at a time into your AI tool if you want help; it fixes named type errors much more reliably than "my deploy is broken".</p>
+<p>You will find advice online to silence the check (<code>ignoreBuildErrors: true</code> in Next.js, or stripping <code>tsc</code> from the build script). That trades a build failure for runtime bugs your users find instead of the compiler. Fix the errors.</p>
+
+<h2>Do not do this</h2>
+<p>Do not click "Retry deploy" repeatedly, and do not delete the site and recreate it. The build machine is deterministic: same repo, same result. And do not paste only the last line of the log into an AI chat, because the generic exit-code line sends it guessing in circles. The first real error, plus the clean-clone reproduction, solves this class of problem in one pass.</p>
+
+<h2>Still stuck?</h2>
+<div class="card">
+<p><strong>Run the instant diagnosis.</strong> Paste your public repo URL into the form and an automated clean-room check does exactly the reproduction described above: fresh clone, clean install, production build, then a plain English report naming the exact blocker, in minutes, free. "Works locally, fails on deploy" is precisely the gap it exists to catch. Private repo or zip? Email works too.</p>
+<a class="cta" href="https://github.com/dylancaponi/vibe-code-rescue/issues/new?template=diagnose.yml">Get an instant free diagnosis</a>
+<p class="note"><a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis%20(build%20fails%20on%20deploy)">Or email me instead</a>. Fixes with 24 hour turnaround start at $95.</p>
+</div>
+</main>
+<footer>
+  <div class="inner"><a href="../">Vibe Code Rescue</a>. Broken AI built apps diagnosed free and fixed in 24 hours.</div>
+</footer>
+</body>
+</html>

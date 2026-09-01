@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Supabase "Invalid API key" or 401 on every request in your Lovable or Bolt app: the fix</title>
+<meta name="description" content="Your AI built app hits Supabase and gets {&quot;message&quot;:&quot;Invalid API key&quot;} or 401 Unauthorized on every request, or crashes with supabaseUrl is required. Here are the five real causes and how to check each one in minutes.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/supabase-invalid-api-key.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>Supabase says "Invalid API key" on every request</h1>
+<p class="lead">You built an app with Lovable, Bolt, v0, or Cursor on top of Supabase. Now every request comes back <code>401 Unauthorized</code> with <code>{"message":"Invalid API key"}</code>, or the app crashes on load with <code>supabaseUrl is required</code>. Often it worked yesterday, or works locally and dies on the deployed site. This error has exactly five common causes, and each one takes about two minutes to check.</p>
+
+<h2>First, see what the app is actually sending</h2>
+<p>Do this before touching anything. Open the broken page, press F12 for devtools, open the Network tab, and reload. Click a failing request to <code>supabase.co</code> and look at the request headers for one named <code>apikey</code>.</p>
+<ul>
+  <li><strong>No <code>apikey</code> header, or no requests to supabase.co at all</strong> (often paired with <code>supabaseUrl is required</code> in the Console tab): the key never made it into the build. That is cause 2 below.</li>
+  <li><strong>An <code>apikey</code> header is present but everything 401s</strong>: the key is wrong, stale, disabled, or from another project. Copy its value; you will compare it in causes 1, 3, and 4.</li>
+  <li><strong>Requests fail with no response at all</strong>, or the project URL will not load: check cause 5, a paused project.</li>
+</ul>
+<p>Every fix below ends the same way: confirm the correct values on one dashboard page. In Supabase, open your project, then Settings, then API. That page shows the project URL and the API keys side by side. If your app's URL and key both came from that one page, causes 1, 3, and 4 are impossible.</p>
+
+<h2>Cause 1: wrong key type, or a legacy key that got disabled</h2>
+<p>Supabase projects historically had two JWT keys: <code>anon</code> for browsers and <code>service_role</code> for trusted servers. Newer projects use a second generation instead: a publishable key starting with <code>sb_publishable_...</code> and a secret key starting with <code>sb_secret_...</code>. Two ways this bites AI built apps:</p>
+<ul>
+  <li><strong>The service role or secret key ended up in the browser.</strong> If the key in your frontend code or env vars is the <code>service_role</code> JWT or starts with <code>sb_secret_</code>, stop and rotate it now. That key bypasses all Row Level Security, and anyone who opens devtools on your site can read it and then read your entire database. Supabase may also reject it from browser contexts outright. The frontend must only ever use the <code>anon</code> or <code>sb_publishable_</code> key.</li>
+  <li><strong>Legacy keys were disabled and old generated code broke overnight.</strong> On the Settings, API page there is a legacy API keys section with a disable option, and Supabase has been migrating projects toward the new keys since 2025. If that switch is off, every <code>anon</code> and <code>service_role</code> JWT stops working instantly, and code an AI tool generated months ago starts returning "Invalid API key" with no code change on your side. Fix: either re-enable legacy keys as a stopgap, or (better) swap the app to the <code>sb_publishable_</code> key from the same page and redeploy.</li>
+</ul>
+
+<h2>Cause 2: env vars exist locally but not on the deploy host</h2>
+<p>The most common cause when it works locally and 401s in production. Your <code>.env</code> file holds <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> (or <code>NEXT_PUBLIC_SUPABASE_URL</code> and <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> on Next.js). But <code>.env</code> is gitignored, so it never reached Vercel, Netlify, or wherever you deployed. The deployed bundle gets <code>undefined</code> for both, which surfaces as <code>supabaseUrl is required</code> or as requests with a garbage key.</p>
+<ol>
+  <li>In your hosting dashboard, find Environment Variables (Vercel: Project Settings, Environment Variables. Netlify: Site configuration, Environment variables).</li>
+  <li>Add both variables with the exact same names your code reads. The prefix matters: <code>VITE_</code> and <code>NEXT_PUBLIC_</code> are what expose a variable to browser code, so a var saved as plain <code>SUPABASE_URL</code> is invisible to the frontend.</li>
+  <li><strong>Redeploy. Not restart, redeploy.</strong> Frontend env vars are baked into the JavaScript bundle at build time. Adding a variable changes nothing until a new build runs, and this single detail explains most "I added the env vars and it still fails" threads.</li>
+</ol>
+<p>Habit that prevents this permanently: keep a <code>.env.example</code> in the repo listing every variable name with placeholder values. It gets committed (no secrets in it), so any deploy host, collaborator, or diagnosis tool can see exactly which variables the app needs.</p>
+
+<h2>Cause 3: the key belongs to a different project than the URL</h2>
+<p>Each Supabase project has its own URL and its own keys, and a key from project A is invalid on project B. This happens constantly with AI builders: Lovable provisions a fresh Supabase project for you, you fork or remix an app, or you copy the key from an old project's tab while the URL points at a new one.</p>
+<p>To check: your project URL looks like <code>https://abcdefghij.supabase.co</code>. That <code>abcdefghij</code> part is the project ref. Legacy JWT keys contain the same ref; paste the key into a JWT decoder (or the debugger at jwt.io) and compare the <code>ref</code> claim to the subdomain in your URL. If they differ, that is your bug. New <code>sb_publishable_</code> keys do not decode this way, so use the simpler check that works for both: open Settings, then API, in the one project you actually want, and copy the URL and the key from that single page in one sitting. Never mix values from two tabs.</p>
+
+<h2>Cause 4: the key is truncated, quoted, or has a trailing newline</h2>
+<p>Legacy anon keys are long JWTs, over 200 characters. Things that mangle them:</p>
+<ul>
+  <li><strong>Cut off in the middle.</strong> A partial copy, or a chat tool or editor truncating the line. A JWT has exactly two dots separating three chunks of letters, numbers, dashes, and underscores. Fewer than two dots, or a key that ends abruptly, means truncation.</li>
+  <li><strong>Wrapped in quotes in the deploy host UI.</strong> Hosting dashboards want the raw value. If you enter <code>"eyJhbG..."</code> with quotes, the quotes become part of the key and Supabase rejects it. Quotes are fine inside a local <code>.env</code> file, which is exactly why the same copy paste breaks in the dashboard.</li>
+  <li><strong>Trailing newline or space.</strong> Copying from a terminal or a file often grabs an invisible newline. Some platforms store it, and the sent header no longer matches.</li>
+</ul>
+<p>To check: in the Network tab, copy the exact <code>apikey</code> header value the browser sent and paste it next to the key on your Settings, API page in a text editor. Compare lengths and endings character by character. If they differ at all, re-paste the key carefully and redeploy.</p>
+
+<h2>Cause 5: your free tier project is paused</h2>
+<p>Supabase pauses free tier projects after about a week without activity. A paused project refuses all API requests, which the frontend can surface as failed fetches or auth errors, and it commonly hits apps that were built in a burst and then left alone. Open the Supabase dashboard: a paused project shows a paused banner and a restore button on its home page. Click restore, wait a few minutes for it to come back, and reload your app. If the app matters, open it once a week or upgrade the project so it stays awake.</p>
+
+<h2>Still stuck?</h2>
+<div class="card">
+<p><strong>Run the instant diagnosis.</strong> Paste your public repo URL into the form and an automated clean-room check reports what is broken: install, build, missing env config, and render, with the exact blocker named, in minutes, free. It catches the missing env var and truncated key cases directly. Keys and project settings live in your Supabase dashboard rather than the repo, so for those also paste the failing request from your Network tab (without the key value) into the issue and I will look the same day. Private repo or zip? Email works too.</p>
+<a class="cta" href="https://github.com/dylancaponi/vibe-code-rescue/issues/new?template=diagnose.yml">Get an instant free diagnosis</a>
+<p class="note"><a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis%20(invalid%20API%20key)">Or email me instead</a>. Fixes with 24 hour turnaround start at $95.</p>
+</div>
+</main>
+<footer>
+  <div class="inner"><a href="../">Vibe Code Rescue</a>. Broken AI built apps diagnosed free and fixed in 24 hours.</div>
+</footer>
+</body>
+</html>

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lovable Stripe payments not working: the five real causes and fixes</title>
+<meta name="description" content="Stripe checkout in your Lovable app does nothing, returns 500, or takes payment without upgrading the user. The five real causes: key mismatch, missing edge function secret, broken webhook, wrong redirect URL, CORS. How to diagnose each.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/lovable-stripe-payments-not-working.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>Stripe payments are not working in your Lovable app</h1>
+<p class="lead">You built an app with Lovable, wired up Stripe, and now something in the payment flow is broken. The checkout button does nothing. Or checkout opens but shows "Invalid API Key provided". Or the payment goes through in Stripe, the money shows up, and your app still treats the user as unpaid. These are five different problems with five different fixes, and the error you see tells you which one you have.</p>
+
+<h2>How Stripe is wired in a Lovable app</h2>
+<p>Lovable does not call Stripe from your frontend. It generates a Supabase Edge Function (usually named something like <code>create-checkout</code> or <code>create-payment</code>) that holds your Stripe secret key and creates the checkout session. Your app calls that function, gets a checkout URL back, and sends the user to Stripe. A second edge function (often <code>stripe-webhook</code>) listens for Stripe to say "payment succeeded" and updates your database. So a broken payment flow can live in four places: the keys, the edge function, the webhook, or the URLs between them. Here is how to find which.</p>
+
+<h2>Diagnose it in two minutes</h2>
+<ol>
+  <li>Open your app, press F12 for devtools, open the <strong>Console</strong> and <strong>Network</strong> tabs, and click the checkout button. If a request to <code>functions/v1/create-checkout</code> (or similar) turns red with a 500, the edge function is failing. If it is blocked with a CORS error, that is cause 5. If nothing happens at all in the Network tab, the button is not wired up, which is a frontend bug, not a Stripe problem.</li>
+  <li>In the Supabase dashboard, go to <strong>Edge Functions</strong>, click the function, and open <strong>Logs</strong>. The real error message is here, not in your browser.</li>
+  <li>If checkout works but the app never registers the payment, go to the Stripe dashboard, then <strong>Developers</strong>, then <strong>Webhooks</strong>, and look at the delivery attempts. Red 400s mean cause 3.</li>
+</ol>
+
+<h2>Cause 1: test keys and live keys are mixed up</h2>
+<p>Stripe gives you two full sets of keys. Test keys start with <code>pk_test_</code> and <code>sk_test_</code>. Live keys start with <code>pk_live_</code> and <code>sk_live_</code>. They are separate universes: a session created with a test secret key cannot be opened with a live publishable key, and test payments never show up in live mode. The classic symptoms: checkout worked fine in preview and broke on the published site (or vice versa), or checkout shows "Invalid API Key provided", or payments "succeed" but no money ever arrives because you are still in test mode and the customer used card 4242 4242 4242 4242.</p>
+<p>Fix: pick one mode and make every key match. In the Stripe dashboard, use the test/live toggle to grab both keys from the same mode. Put the secret key in your Supabase edge function secrets (next cause shows where) and make sure any publishable key in the frontend is from the same mode. If you are going live, you also need to complete Stripe's account activation first, or the live keys will not work at all. Then republish the app so the frontend picks up the change.</p>
+
+<h2>Cause 2: the Stripe secret key never made it into Supabase</h2>
+<p>This is the most common one. The edge function code contains a line like <code>Deno.env.get("STRIPE_SECRET_KEY")</code>. That value is not in your code and not in Lovable. It lives in the Supabase dashboard, and if it was never set there, the function crashes the moment it runs. From the outside, the checkout button does nothing or shows a generic "Edge Function returned a non-2xx status code" error, and the Network tab shows a 500.</p>
+<p>Confirm it: Supabase dashboard, <strong>Edge Functions</strong>, pick the function, open <strong>Logs</strong>. You will see something like "STRIPE_SECRET_KEY is not set", or a Stripe error saying no API key was provided, or "Invalid API Key provided: undefined".</p>
+<p>Fix: in the Supabase dashboard go to <strong>Settings</strong>, then <strong>Edge Functions</strong> (or Edge Functions, then Secrets, depending on the dashboard version), and add a secret named exactly <code>STRIPE_SECRET_KEY</code> with your <code>sk_test_</code> or <code>sk_live_</code> value. The name must match what the code reads, character for character. Watch for pasted whitespace, a trailing space breaks the key. New secrets apply to new invocations, so just retry checkout after saving.</p>
+
+<h2>Cause 3: payment succeeds but the app never updates</h2>
+<p>The customer pays. Stripe shows the charge. Your app still says free plan, zero credits, not subscribed. This is a webhook problem. Your app does not find out about successful payments by magic: Stripe has to call your webhook edge function, and that call is either not configured or being rejected.</p>
+<p>Confirm it: Stripe dashboard, <strong>Developers</strong>, then <strong>Webhooks</strong>. Two possibilities. First, there is no endpoint listed at all, so Stripe has nowhere to send the event. Second, the endpoint exists but the delivery attempts show 400 errors, usually with a body about signature verification failing ("No signatures found matching the expected signature for payload"). That means the <code>STRIPE_WEBHOOK_SECRET</code> in your Supabase secrets does not match this endpoint's signing secret. Each webhook endpoint has its own <code>whsec_</code> secret, and test mode and live mode endpoints are separate, so it is easy to have the wrong one.</p>
+<p>Fix: if there is no endpoint, add one pointing at your function URL, which looks like <code>https://YOUR-PROJECT-REF.supabase.co/functions/v1/stripe-webhook</code>, and subscribe it to the events the code handles (at minimum <code>checkout.session.completed</code>; for subscriptions, the code usually also wants the <code>customer.subscription</code> events, check what it listens for). Then click "Reveal" on that endpoint's signing secret and save it as <code>STRIPE_WEBHOOK_SECRET</code> in Supabase edge function secrets. If the endpoint exists but 400s, re-copy the signing secret from that exact endpoint into Supabase. Then use "Resend" on a failed delivery in the Stripe dashboard to replay it and confirm it now returns 200. One more check: the webhook function must be callable without a logged in user. In Supabase, that means JWT verification has to be disabled for that specific function (in the function's settings, or <code>verify_jwt = false</code> in the project's <code>config.toml</code>), otherwise Supabase rejects Stripe with a 401 before your code ever runs.</p>
+
+<h2>Cause 4: after paying, users land on localhost or the preview URL</h2>
+<p>Checkout itself works, but after paying the customer lands on a dead localhost page, the Lovable preview domain, or an old URL. The checkout session is created with a <code>success_url</code> and <code>cancel_url</code>, and the AI hard-coded them to whatever domain existed when it wrote the function. The payment is real (the webhook still fires), but the customer experience is broken and they will email you asking if they got charged.</p>
+<p>Fix: open the edge function code and look at the <code>success_url</code> and <code>cancel_url</code> passed to the session create call. Replace any localhost or preview address with your published domain, or better, have the function build the URL from the request origin header so it works in both preview and production. Redeploy the function (in Lovable, ask it to make this exact change and republish).</p>
+
+<h2>Cause 5: CORS errors when calling the function from the published domain</h2>
+<p>The console shows something like "Access to fetch at ... has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present". Edge functions have to answer the browser's preflight OPTIONS request and send CORS headers on every response. Lovable's generated functions usually include this, but it breaks when the headers are only sent on the success path (so real errors surface as CORS instead of the actual message) or the allowed origin is pinned to an old domain.</p>
+<p>Fix: the function should handle <code>OPTIONS</code> requests by returning the CORS headers immediately, and include <code>Access-Control-Allow-Origin</code> plus <code>Access-Control-Allow-Headers</code> (covering <code>authorization</code>, <code>content-type</code>, and the Supabase client headers) on every response, including error responses. If the origin is hard-coded, set it to your published domain or <code>*</code>. Note that a CORS error in the console sometimes masks cause 2: the function crashed before it could attach headers. Check the edge function logs before touching CORS code.</p>
+
+<h2>Do not do this</h2>
+<p>Do not paste your secret key into the frontend or into the Lovable chat to "make it work". Anything in the frontend bundle is public, and a leaked <code>sk_live_</code> key lets anyone create charges and refunds against your account. The secret key belongs in Supabase edge function secrets and nowhere else. If it has ever been in your code or a public repo, roll it in the Stripe dashboard (Developers, then API keys, then roll key) and update the Supabase secret. And do not keep re-prompting the AI to rewrite the payment code: in four of the five causes above, the code is fine and the fix is a setting in the Stripe or Supabase dashboard.</p>
+
+<h2>Still stuck?</h2>
+<div class="card">
+<p><strong>Run the instant diagnosis.</strong> Paste your public repo URL into the form and an automated clean-room check reports what is broken: install, build, render, and config, with the exact blocker named, in minutes, free. Stripe keys and webhook settings live in your Stripe and Supabase dashboards rather than your code, so for this one also paste the edge function log error and the webhook delivery status into the issue and I will look at it the same day. Private repo or zip? Email works too.</p>
+<a class="cta" href="https://github.com/dylancaponi/vibe-code-rescue/issues/new?template=diagnose.yml">Get an instant free diagnosis</a>
+<p class="note"><a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis%20(Stripe%20not%20working)">Or email me instead</a>. Fixes with 24 hour turnaround start at $95.</p>
+</div>
+</main>
+<footer>
+  <div class="inner"><a href="../">Vibe Code Rescue</a>. Broken AI built apps diagnosed free and fixed in 24 hours.</div>
+</footer>
+</body>
+</html>

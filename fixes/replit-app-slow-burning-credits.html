@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your Replit app is slow and burning through credits: the fix</title>
+<meta name="description" content="Your deployed Replit app is slow and the usage bill keeps climbing. Here is how autoscale billing actually works, where the waste hides, and how to cut the bill.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/replit-app-slow-burning-credits.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>Your Replit app is slow and burning through credits</h1>
+<p class="lead">You deployed an app on Replit. It works, but pages take seconds to load, and the usage bill keeps climbing. Maybe you already scaled the machines up because visitors were seeing errors, and now the app is fast but the bill is scary. In a real case from August 2026, a production news site on Replit Autoscale was spending $300 a day and still hitting 429 errors until the owner understood how autoscale sizing and billing actually work. The good news: a slow, expensive Replit app almost always has two or three specific causes, all findable in an afternoon, and most of the fixes are free.</p>
+
+<h2>How autoscale billing actually works</h2>
+<p>An Autoscale deployment bills you compute units while machines are actively handling requests. More requests means more machine time. Slower responses also mean more machine time, because each request holds a machine longer. That is the whole model, and it explains every surprise bill: either too much traffic is reaching your app, or your app is doing too much work per request, or both. Every fix below attacks one of those two numbers.</p>
+
+<h2>Cause 1: the machine size is wrong</h2>
+<p>Autoscale deployments have per-deployment settings for machine power and max machine count, and the defaults are sized for hobby traffic. Too small, and responses get slow under load and Replit's edge starts shedding requests with a bare 429 Rate exceeded page (that error comes from the edge, not your code, and there is a <a href="replit-rate-exceeded-429.html">separate guide for it</a>). Scaling up stops the errors, and in the news site case it did, immediately. But it raises the bill in direct proportion, which is why sizing up should never be the only move. Fix the machine size so the errors stop, then spend the same afternoon cutting the traffic and per-request work so the bigger machines sit idle most of the time.</p>
+
+<h2>Cause 2: you are paying to serve traffic you do not want</h2>
+<p>Content-shaped sites in 2026 get hammered by AI scrapers and bots, often more than by humans. On autoscale, every one of those requests spins your machines and bills you compute. Worse, Replit does not show you edge logs, so you are guessing at who is hitting you from the shape of a bill.</p>
+<p>The fix is free: put Cloudflare in front. Point your own domain at the deployment with Cloudflare's DNS proxy enabled, then:</p>
+<ul>
+  <li><strong>Cache static assets.</strong> Images, CSS, JS, and any page that does not change per visitor get served from Cloudflare's edge and never touch Replit. For a news-style site this alone removes most origin traffic.</li>
+  <li><strong>Turn on bot fight mode.</strong> Scrapers and bad bots get blocked or challenged before they cost you a compute unit.</li>
+  <li><strong>Own your edge logs.</strong> You can finally see who is hitting the site and what they are requesting, instead of reverse-engineering it from spend.</li>
+</ul>
+<p>This was the other half of the $300-a-day fix: free Cloudflare in front cut the compute spend because most of the traffic never needed to reach the origin at all.</p>
+
+<h2>Cause 3: app-level waste in generated code</h2>
+<p>Agent-generated apps ship with patterns that are invisible in development and expensive in production. Check for each of these:</p>
+<ul>
+  <li><strong>Polling loops.</strong> The classic is a <code>setInterval</code> that fetches from your API every second, generated to make a dashboard feel live. One idle browser tab becomes 86,400 requests a day, each one billing compute. Open your deployed site, press F12, watch the Network tab for sixty seconds. A steady drumbeat of identical requests is a polling loop. Slow it to every 30 or 60 seconds, or remove it.</li>
+  <li><strong>No caching headers.</strong> If responses have no <code>Cache-Control</code> header, nothing (browser or Cloudflare) can cache them, and every view hits origin. Add long cache lifetimes for static assets and sensible short ones for pages.</li>
+  <li><strong>Every render hits the database.</strong> Generated code often queries the database on every page load for data that changes hourly. Cache those reads in memory or behind a cache header instead of paying a query per view.</li>
+  <li><strong>Unoptimized images.</strong> Multi-megabyte uploads served raw make every page slow and every request long, and long requests are billed machine time. Resize and compress, and let Cloudflare cache them.</li>
+  <li><strong>Dev-mode server in production.</strong> If your deployment run command is <code>npm run dev</code>, you are paying autoscale prices to run an unminified dev server with hot reload. Switch the deployment to build then start: <code>npm run build</code> as the build command and <code>npm run start</code> (or serving the built output) as the run command. This one change can cut response times dramatically.</li>
+</ul>
+
+<h2>Cause 4: autoscale is the wrong product for your traffic</h2>
+<p>Autoscale is priced for bursty traffic: you pay while handling requests and nothing while idle. If your app gets steady traffic all day, you are paying by the request for something a flat-rate machine could handle. Replit's Reserved VM deployment is a fixed monthly price for an always-on machine. The crossover is simple to check: look at your last month of autoscale spend in the usage dashboard. If it is consistently above the Reserved VM price for a machine that could handle your load, switch and cap the bill. If your traffic is spiky or mostly idle, autoscale stays cheaper. Do this comparison after the Cloudflare and app-level fixes, because those may cut your autoscale spend below the crossover.</p>
+
+<h2>How to diagnose, concretely</h2>
+<ol>
+  <li><strong>Replit usage dashboard.</strong> Find what is actually billing: which deployment, and whether spend tracks traffic hours or runs flat all day. Flat spend on autoscale points at polling loops or scrapers.</li>
+  <li><strong>Deployment logs.</strong> Look at what is being requested and how long responses take. Repeated identical requests at machine-gun pace are bots or polling. Slow responses on every request point at dev mode, unoptimized images, or per-render database work.</li>
+  <li><strong>Browser devtools Network tab.</strong> Open your live site, press F12, and watch for sixty seconds without touching anything. Recurring requests reveal polling loops. Response headers show whether caching is on. The size column finds the multi-megabyte images.</li>
+</ol>
+
+<h2>You are not locked in</h2>
+<p>A Replit app feels like it lives inside Replit, but under the hood it is ordinary code: typically a Node and React project, with the built-in database being Neon Postgres. That means compute is portable. If the economics never work out, you can deploy the same repo to Vercel, Netlify, or Fly and keep everything, including the database, by pointing <code>DATABASE_URL</code> at it from anywhere. Either way, take a backup now, while nothing is on fire: <pre><code>pg_dump "$DATABASE_URL" &gt; backup.sql</code></pre> If your only copy of production data lives behind someone else's billing system, you do not really own it.</p>
+
+<h2>Do not do this</h2>
+<p>Do not just keep scaling machines up until the app feels fast. That converts every inefficiency in the list above into a permanent line on your bill. And do not ask the in-app agent to "make the app faster" and accept whatever it rewrites; it cannot see your usage dashboard, your deployment settings, or your traffic, so it will churn your working code while the real cause sits in configuration.</p>
+
+<h2>Still stuck?</h2>
+<div class="card">
+<p><strong>Run the instant diagnosis.</strong> Paste your public repo URL into the form and an automated clean-room check reports what is broken: install, build, render, and config, with the exact blocker named, in minutes, free. It catches the app-level waste directly (dev-mode run commands, polling loops, missing cache headers). Billing and deployment settings live in your Replit account rather than your code, so for this one also paste a screenshot or numbers from your usage dashboard into the issue and I will look at it the same day. Private repo or zip? Email works too.</p>
+<a class="cta" href="https://github.com/dylancaponi/vibe-code-rescue/issues/new?template=diagnose.yml">Get an instant free diagnosis</a>
+<p class="note"><a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis%20(slow%20app%20or%20credits)">Or email me instead</a>. Fixes with 24 hour turnaround start at $95.</p>
+</div>
+</main>
+<footer>
+  <div class="inner"><a href="../">Vibe Code Rescue</a>. Broken AI built apps diagnosed free and fixed in 24 hours.</div>
+</footer>
+</body>
+</html>
