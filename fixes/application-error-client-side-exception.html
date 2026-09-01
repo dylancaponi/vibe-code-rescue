@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>"Application error: a client-side exception has occurred": how to actually fix it</title>
+<meta name="description" content="Your deployed Next.js or v0 app shows 'Application error: a client-side exception has occurred'. The real error is in the browser console. Here is how to read it and the five fixes that cover almost every case.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/application-error-client-side-exception.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>"Application error: a client-side exception has occurred (see the browser console for more information)"</h1>
+<p class="lead">You deployed a Next.js app (often built with v0.dev) and instead of your site, visitors see this one gray sentence. Here is the key fact: this screen is not the error. It is Next.js's last-resort cover page, shown when a JavaScript error escapes while the page is rendering in the browser. Production builds strip the details on purpose, so the screen tells you nothing. The real error is sitting in the browser console, and the message literally tells you where to look.</p>
+
+<h2>Step one, before anything else: read the console</h2>
+<p>Open the broken page. Press F12 (or right click, Inspect) and click the Console tab. Reload the page. Read the <strong>first red error</strong>, top to bottom. Ignore warnings in yellow and ignore everything after the first red line, because later errors are usually fallout from the first one. That first line decides which fix below applies to you. Do not paste "application error client side exception" back into the AI chat, because that message is generic and the AI will guess. Paste the console error instead and it can actually help.</p>
+
+<h2>Fix 1: "Cannot read properties of undefined" (data that never arrived)</h2>
+<p>Console shows something like <code>TypeError: Cannot read properties of undefined (reading 'map')</code> or <code>(reading 'name')</code>. Your component assumed data exists (<code>data.items.map(...)</code>), but in production the fetch returned nothing, so <code>data</code> is undefined and the render crashes. Why does it only break deployed? Usually because the API call itself fails in production: an API key or database URL lives in your local <code>.env</code> file and was never set on Vercel, or the API base URL points at <code>localhost</code>. Check the Network tab for red failed requests to confirm.</p>
+<p>The fix has two parts. First, set every environment variable in Vercel under Settings, then Environment Variables, and then <strong>redeploy</strong>. Env var changes do not apply to the deploy that already exists; they only take effect on the next build. Second, make the component survive missing data: show a loading state while fetching and guard the access (<code>data?.items?.map(...)</code> or an early <code>if (!data) return ...</code>). Then a failed API call degrades to an empty screen section instead of killing the whole page.</p>
+
+<h2>Fix 2: "Hydration failed because the initial UI does not match"</h2>
+<p>Console mentions hydration, text content mismatch, or "server rendered HTML didn't match". Next.js renders your page on the server first, then the browser renders it again and compares. If the two renders differ, hydration fails. The classic causes are values that only exist or only make sense in the browser: <code>Date.now()</code> or <code>new Date()</code> formatting, <code>Math.random()</code>, <code>window</code>, or <code>localStorage</code>, used directly during render. The server and browser produce different output, and production is stricter about it than dev.</p>
+<p>Fix: move browser-only logic out of the render path. Put it in a <code>useEffect</code> and store the result in state, so the first render matches the server and the browser-only value fills in right after. For a whole component that cannot render on the server (maps, charts, editors), load it client-only:</p>
+<pre><code>const Chart = dynamic(() => import("../components/Chart"), { ssr: false });</code></pre>
+
+<h2>Fix 3: env var is set on Vercel but still undefined (missing NEXT_PUBLIC_)</h2>
+<p>Console shows an undefined value or a failed request to <code>undefined/api/...</code>, and you swear the variable is set in Vercel. It probably is, but only for the server. Next.js only ships env vars to the browser if the name starts with <code>NEXT_PUBLIC_</code>. A client component reading <code>process.env.API_URL</code> gets undefined in the browser, always, no matter what Vercel says. Rename it to <code>NEXT_PUBLIC_API_URL</code> in Vercel and in the code, then redeploy. One warning: anything with that prefix is visible to every visitor, so never put secret keys behind it. Secrets stay server-side, in API routes or server components.</p>
+
+<h2>Fix 4: a library that only breaks in production</h2>
+<p>Everything works with <code>npm run dev</code>, but the deployed build crashes, and the console error's stack trace mentions a package name from <code>node_modules</code> rather than your own files. Some libraries assume <code>window</code> exists, or break under production minification, or shipped a bad version. The stack trace names the culprit. Options, in order: dynamic-import the component that uses it with <code>ssr: false</code> (Fix 2's snippet), check the package's GitHub issues for your exact error, and pin or downgrade to a known-good version in <code>package.json</code>.</p>
+
+<h2>Fix 5: works on your machine, broken deployed, no obvious error</h2>
+<p>When the console error does not match anything above, run the environment-difference checklist, because that is the whole category this bug lives in. In order: every local <code>.env</code> variable exists in Vercel (compare line by line, typos fail silently). No API URL anywhere says <code>localhost</code>. Your backend's CORS settings allow your deployed domain, not just localhost (the console will say "blocked by CORS policy" if not). And test the deployed site in an incognito window, because a browser extension can inject the exact same crash and send you chasing a bug that does not exist in your code.</p>
+
+<h2>Worth ten minutes: error monitoring</h2>
+<p>This whole page exists because production hides errors. A free error monitoring tool (Sentry's free tier is fine, <code>npx @sentry/wizard@latest -i nextjs</code> sets it up) turns the mystery screen into an emailed report with the exact error, the line, and the browser it happened in. You stop needing a visitor to open devtools for you. Optional, but the ten-minute setup pays for itself the first time this happens while you are asleep.</p>
+
+<h2>Still stuck?</h2>
+<div class="card">
+<p><strong>Run the instant diagnosis.</strong> Paste your public repo URL into the form and an automated clean-room check reports what is broken: install, build, render, and config, with the exact blocker named, in minutes, free. It builds your app in production mode and catches the crash the deployed site is hiding from you. Private repo or zip? Email works too.</p>
+<a class="cta" href="https://github.com/dylancaponi/vibe-code-rescue/issues/new?template=diagnose.yml">Get an instant free diagnosis</a>
+<p class="note"><a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis%20(client-side%20exception)">Or email me instead</a>. Fixes with 24 hour turnaround start at $95.</p>
+</div>
+</main>
+<footer>
+  <div class="inner"><a href="../">Vibe Code Rescue</a>. Broken AI built apps diagnosed free and fixed in 24 hours.</div>
+</footer>
+</body>
+</html>

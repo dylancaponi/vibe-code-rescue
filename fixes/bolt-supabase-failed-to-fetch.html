@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bolt.new + Supabase "TypeError: Failed to fetch": every cause and fix</title>
+<meta name="description" content="Your Bolt.new app throws TypeError: Failed to fetch on every Supabase call. Login fails, data never loads, in preview or after deploying to Netlify. It is one of five causes: missing env vars, stale build, paused project, auth URLs, or an ad blocker. Here is how to tell which.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/bolt-supabase-failed-to-fetch.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>Bolt.new app throws "TypeError: Failed to fetch" on every Supabase call</h1>
+<p class="lead">You built an app in Bolt.new with Supabase behind it. Now login fails, data never loads, and the console shows <code>TypeError: Failed to fetch</code>. Sometimes it worked in the Bolt preview and broke the moment you deployed to Netlify. This error looks scary but it only has five real causes, and you can identify yours in about two minutes with devtools open.</p>
+
+<h2>What "Failed to fetch" actually means</h2>
+<p>The browser tried to make a network request and never got a usable response back. Not a 404, not a 500, nothing. That happens for exactly four reasons: the URL is wrong or unreachable, there is no network path to it, the browser blocked the response (CORS), or the request never really left because your Supabase client was created with an undefined URL or key. The error message is the same in all four cases, which is why pasting it back into the Bolt chat rarely fixes it. You have to look at the request itself.</p>
+
+<h2>Diagnose it first: read the actual request</h2>
+<ol>
+  <li>Open your app, press F12 for devtools, and click the Network tab.</li>
+  <li>Reload the page or retry the login, and find the failing request. It should go to something like <code>https://yourproject.supabase.co/auth/v1/token</code> or <code>rest/v1/your_table</code>.</li>
+  <li>Read the full URL and the status column. This tells you which class you are in:</li>
+</ol>
+<ul>
+  <li><strong>URL contains the literal word "undefined"</strong> (like <code>https://undefined/auth/v1/token</code>): missing env vars. Cause 1 or 2 below.</li>
+  <li><strong>URL looks right but status shows "(failed)" with no number</strong>: the request never reached a server. Paused or deleted project, a typo in the URL, or an extension blocked it. Causes 3 and 5.</li>
+  <li><strong>Status is 401 or 403</strong>: the request arrived fine. That is a key or permissions problem, not a fetch problem. Check the anon key and your RLS policies (<a href="supabase-data-not-showing.html">separate guide here</a>).</li>
+</ul>
+
+<h2>Cause 1: the Supabase env vars are missing or undefined</h2>
+<p>Bolt apps use Vite, and the Supabase client is created from two environment variables: <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code>. If either is missing, <code>createClient</code> receives <code>undefined</code> and every single call fails with "Failed to fetch". Nothing warns you at build time.</p>
+<p><strong>Check:</strong> the Network tab trick above is definitive. You can also add <code>console.log(import.meta.env.VITE_SUPABASE_URL)</code> near the top of your app and look at the console. If it prints <code>undefined</code>, this is your problem.</p>
+<p><strong>Fix:</strong> in Bolt, open the project settings and confirm both variables are set (if you connected Supabase through Bolt's integration it usually writes them for you, but a fork or a fresh import can lose them). On Netlify, go to Site configuration, then Environment variables, and add both. The values come from your Supabase dashboard under Project Settings, then API: the Project URL and the <code>anon</code> public key. The names must start with <code>VITE_</code> exactly, or Vite refuses to expose them to the browser.</p>
+
+<h2>Cause 2: env vars are set, but you deployed before adding them</h2>
+<p>This is the one that catches almost everyone who says "it works in Bolt but not on Netlify". Vite bakes environment variables into the JavaScript bundle at build time. If your site was built before you added the variables, the deployed bundle still has <code>undefined</code> baked in, and adding the variables afterward changes nothing until you rebuild.</p>
+<p><strong>Check:</strong> the variables exist in Netlify, yet the Network tab still shows "undefined" in the request URL.</p>
+<p><strong>Fix:</strong> in Netlify, go to Deploys, click "Trigger deploy", and pick "Clear cache and deploy site". Clearing the cache matters, a plain redeploy can reuse the old build. Wait for the deploy to finish, then hard-refresh your site (Cmd+Shift+R or Ctrl+Shift+R).</p>
+
+<h2>Cause 3: the Supabase project is paused (or the URL is wrong)</h2>
+<p>Free-tier Supabase projects pause automatically after about a week of inactivity. When a project is paused, its URL stops answering entirely, and every request from your app fails with "Failed to fetch". If you built something two weeks ago and it "just stopped working", start here.</p>
+<p><strong>Check:</strong> open the Supabase dashboard. If the project shows a Paused badge, that is the whole problem. Also compare the URL in your env vars character by character against the Project URL in the dashboard; one wrong letter in <code>yourproject.supabase.co</code> produces the identical error.</p>
+<p><strong>Fix:</strong> click Restore project in the dashboard and wait a minute or two for it to come back up. No code changes needed. If you expect the app to sit idle for weeks at a time, know that this will happen again on the free tier.</p>
+
+<h2>Cause 4: your deployed domain is not in Supabase's auth URLs</h2>
+<p>This one breaks login flows specifically while plain data reads may still work. Supabase Auth only completes sign-ins and redirects for domains it has been told about. Your Bolt preview URL may be configured while your real Netlify domain is not.</p>
+<p><strong>Check:</strong> login fails on the deployed site but works in the Bolt preview, or the failure only happens during sign-in, email confirmation, or OAuth redirects.</p>
+<p><strong>Fix:</strong> in the Supabase dashboard go to Authentication, then URL Configuration. Set the Site URL to your deployed domain (like <code>https://yourapp.netlify.app</code>) and add it to the Redirect URLs list as well. Save, then try the login again in a fresh tab.</p>
+
+<h2>Cause 5: an ad blocker or privacy extension is eating the request</h2>
+<p>Some blockers and privacy extensions (and a few VPNs and corporate firewalls) block requests to <code>supabase.co</code> or to anything that looks like tracking. The request dies in the browser before it leaves, and you get "Failed to fetch" while the exact same app works fine on your phone or a friend's laptop.</p>
+<p><strong>Check:</strong> open the site in an incognito/private window with extensions disabled. If it works there, an extension is the culprit.</p>
+<p><strong>Fix:</strong> allowlist your site and <code>supabase.co</code> in the extension, or accept that a small slice of users with aggressive blockers will hit this. There is no code change that fully prevents it.</p>
+
+<h2>If you fixed the env vars and it still fails</h2>
+<p>Go back to the Network tab. The failing request always tells the truth: a URL with "undefined" means the build still does not have the variables (redeploy again, clear cache), a real URL with no status means the project is unreachable (paused, typo, or blocked), and any 4xx status means the fetch part is solved and you are now debugging keys or Row Level Security instead.</p>
+
+<h2>Still stuck?</h2>
+<div class="card">
+<p><strong>Run the instant diagnosis.</strong> Paste your public repo URL into the form and an automated clean-room check reports what is broken: install, build, render, and config, with the exact blocker named, in minutes, free. For this error, also paste the failing request URL and status from your Network tab into the issue and I will look at it the same day. Private repo or zip? Email works too.</p>
+<a class="cta" href="https://github.com/dylancaponi/vibe-code-rescue/issues/new?template=diagnose.yml">Get an instant free diagnosis</a>
+<p class="note"><a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis%20(failed%20to%20fetch)">Or email me instead</a>. Fixes with 24 hour turnaround start at $95.</p>
+</div>
+</main>
+<footer>
+  <div class="inner"><a href="../">Vibe Code Rescue</a>. Broken AI built apps diagnosed free and fixed in 24 hours.</div>
+</footer>
+</body>
+</html>

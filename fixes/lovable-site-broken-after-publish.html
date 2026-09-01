@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lovable app works in preview but is broken after publish: the fix</title>
+<meta name="description" content="Your Lovable app runs fine in preview but is blank, broken, or erroring on the published site. Here are the six causes, how to tell them apart, and the fix for each.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/lovable-site-broken-after-publish.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>Your Lovable app works in preview but is broken after publish</h1>
+<p class="lead">Everything looked perfect in the Lovable preview. You hit Publish, opened your lovable.app link or your custom domain, and got a blank page, an error, or a login that goes nowhere. You did not break anything. Preview and published are two different environments, and one of six things did not survive the trip.</p>
+
+<h2>Why preview and published are not the same thing</h2>
+<p>The preview runs a development server (Vite in dev mode). It rebuilds on the fly, forgives small mistakes, and runs on a preview URL that your backend already trusts. Publish creates a production build: your code is compiled once, optimized, and served as static files from a new domain. Anything that quietly depended on the dev server or the preview URL breaks the moment you publish. That is the entire story. Now find which dependency it was.</p>
+
+<h2>Diagnose it in two minutes: read the actual error first</h2>
+<ol>
+  <li>Open the published site (not the preview). Press F12, or right-click and choose Inspect, then open the <strong>Console</strong> tab. Reload the page. Red text is the real error. Copy it somewhere.</li>
+  <li>Open the <strong>Network</strong> tab and reload again. Look for red rows: requests failing with 4xx or 5xx. Click one and note the URL it is calling. Is it your Supabase project? A preview URL? localhost?</li>
+  <li>Match what you see to the causes below. The console plus the failing URL almost always names the culprit directly.</li>
+</ol>
+
+<h2>Cause 1: environment variables did not make it into the build</h2>
+<p>In preview, your Supabase URL and keys are wired in and everything works. If the published build was made without those VITE_ variables, the app boots with undefined config and often renders nothing at all. The console typically shows something like "supabaseUrl is required" or errors about undefined reading a property. Fix: in Lovable, confirm your Supabase connection and any secrets are set at the project level (not just pasted into chat), then republish so a fresh build picks them up. If you exported the code and host it yourself, set the VITE_ variables in your host's build settings; they are baked in at build time, so you must rebuild after adding them.</p>
+
+<h2>Cause 2: login works in preview but breaks on the published site</h2>
+<p>This one is almost universal. Supabase Auth has a "Site URL" and a list of allowed redirect URLs. They still point at the preview URL (or localhost). So on the published site, you click log in, authenticate, and get bounced back to the preview URL, to localhost, or to an error. Fix: in your Supabase dashboard, go to Authentication, then URL Configuration. Set Site URL to your published domain (your custom domain if you have one) and add the published URL to the additional redirect URLs. Keep the preview URL in the list too so preview keeps working. Also check for the sibling problem: if requests to Supabase fail with CORS errors in the console, your published domain is not an allowed origin yet.</p>
+
+<h2>Cause 3: subpages 404 on refresh or direct links</h2>
+<p>The home page works, but refreshing on /dashboard or sharing a direct link gives a 404. Your app is a single-page app: every URL must be rewritten to index.html so the app's own router can handle it. Lovable's own hosting handles this for you, so on lovable.app this is rare. It bites people who export the code and self-host on Netlify, Vercel, or plain static hosting without a rewrite rule. Fix: add the SPA fallback for your host (a redirects rule sending /* to /index.html with a 200, or the equivalent rewrites entry).</p>
+
+<h2>Cause 4: hard-coded preview URLs in the code</h2>
+<p>Somewhere along the way, the AI wrote an API call with the full preview URL pasted right into the code instead of using config. Preview works because the URL is its own. Published calls the preview backend, which rejects or ignores it. You will spot this in the Network tab: failing requests going to an id.lovableproject.com style URL or some other address that is not your real backend. Fix: search the code for the preview hostname and replace it with the correct production URL or an environment variable, then republish.</p>
+
+<h2>Cause 5: you are looking at a stale publish</h2>
+<p>Sometimes the published site is simply an old build. Your latest changes exist only in preview, or your browser cached the previous version. Fix: hit Publish again and wait for it to finish, then hard-refresh the published site (Cmd+Shift+R on Mac, Ctrl+Shift+R on Windows) or open it in an incognito window. If incognito shows the new version, it was your cache all along.</p>
+
+<h2>Cause 6: custom domain DNS or SSL has not settled yet</h2>
+<p>If the lovable.app URL works but your custom domain shows a blank page, a security warning, or nothing at all, the domain itself is the problem, not your app. DNS changes take time to propagate and the SSL certificate is issued after DNS resolves, which can add up to a few hours after you connect the domain. Fix: verify the DNS records match exactly what Lovable asked for, then wait. Test the lovable.app URL in the meantime; if that works, your app is fine and this is purely a domain-plumbing delay.</p>
+
+<h2>Do not do this</h2>
+<p>Do not ask the AI to "fix the bug" and let it rewrite working code. In five of the six cases above, the code is fine; the problem is configuration living outside the code (Supabase URLs, env vars, DNS, cache). Prompting blindly here tends to churn your app while the real setting stays wrong. Read the console error first, every time.</p>
+
+<h2>Still stuck?</h2>
+<div class="card">
+<p><strong>Run the instant diagnosis.</strong> Paste your public repo URL into the form and an automated clean-room check reports what is broken: install, build, render, and config, with the exact blocker named, in minutes, free. Auth and domain settings live in your Supabase and Lovable accounts rather than your code, so for this one also paste the console error and the failing request URL from your Network tab into the issue and I will look at it the same day. Private repo or zip? Email works too.</p>
+<a class="cta" href="https://github.com/dylancaponi/vibe-code-rescue/issues/new?template=diagnose.yml">Get an instant free diagnosis</a>
+<p class="note"><a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis%20(broken%20after%20publish)">Or email me instead</a>. Fixes with 24 hour turnaround start at $95.</p>
+</div>
+</main>
+<footer>
+  <div class="inner"><a href="../">Vibe Code Rescue</a>. Broken AI built apps diagnosed free and fixed in 24 hours.</div>
+</footer>
+</body>
+</html>
