@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lovable GitHub export not working: blank screen from missing env vars, fixed</title>
+<meta name="description" content="You exported or cloned a Lovable app from GitHub and it is a blank screen locally or on Vercel. The repo has no .env, so VITE_SUPABASE_URL is undefined and the Supabase client crashes before React mounts. Here is the full fix.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/lovable-github-export-missing-env.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>Your Lovable app is broken after GitHub export: the missing env var fix</h1>
+<p class="lead">You connected your Lovable project to GitHub (or cloned a repo someone else exported), ran <code>npm install</code> and <code>npm run dev</code>, and got a blank white screen. Or you deployed the repo straight to Vercel or Netlify and the live site renders nothing. The app worked perfectly inside Lovable. Nothing is wrong with the code you exported. The repo is simply missing its environment variables, because Lovable injects them at publish time and they never get committed to GitHub. We diagnosed a real Lovable campus app with exactly this: the page served zero rendered content until the env handling was fixed. Here is how to fix yours in about ten minutes.</p>
+
+<h2>Why the exported repo breaks when the Lovable version works</h2>
+<p>Inside Lovable, your Supabase URL and publishable key are stored as project settings and injected into the build automatically. But <code>.env</code> files are gitignored (correctly, they can hold secrets), so the GitHub repo ships without them, and many Lovable exports do not include a <code>.env.example</code> either. When you run the repo anywhere Lovable is not doing the injecting, every <code>import.meta.env.VITE_SUPABASE_URL</code> read comes back <code>undefined</code>. The same applies to remixes: remixing or cloning someone else's Lovable project copies their code, never their env values, and you are expected to wire in your own Supabase project.</p>
+
+<h2>The import-time crash: why the screen is blank instead of showing an error</h2>
+<p>This is the part that makes people think the export itself is corrupted. Lovable apps typically create the Supabase client in <code>src/integrations/supabase/client.ts</code> (older or hand-edited projects sometimes use <code>src/lib/supabase.ts</code>). That file runs at module load, before React ever mounts. Two ways it dies:</p>
+<ul>
+  <li><strong>It throws immediately.</strong> Code like <code>if (!supabaseUrl) throw new Error(...)</code>, or <code>createClient(undefined, undefined)</code> raising <code>supabaseUrl is required</code>, kills the whole JavaScript bundle before a single component renders. Your ErrorBoundary never fires because React never started. Result: a permanently blank page with no visible error.</li>
+  <li><strong>It limps along with undefined values.</strong> No throw, but every Supabase call fails, so the app renders a shell and nothing loads.</li>
+</ul>
+<p>How to confirm this is your problem: open the blank page, press F12 (or right-click, Inspect), open the <strong>Console</strong> tab, and reload. If the very first red error mentions <code>supabaseUrl is required</code>, <code>VITE_SUPABASE_URL</code>, or a throw inside <code>client.ts</code>, and the Elements tab shows an empty <code>&lt;div id="root"&gt;&lt;/div&gt;</code>, you have the import-time crash. In the campus app we rescued, that empty root div was the entire symptom, and the fix took the rendered page from zero content to a working app.</p>
+
+<h2>Step 1: find out which variables the code expects</h2>
+<p>Search the repo for <code>import.meta.env</code>. In a Lovable export you will almost always find <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> (some projects use <code>VITE_SUPABASE_ANON_KEY</code> instead; use whatever name the code actually reads, exactly). Also note <code>VITE_SUPABASE_PROJECT_ID</code> if it appears. A quick way from the terminal:</p>
+<pre><code>grep -rn "import.meta.env" src/</code></pre>
+
+<h2>Step 2: get the real values from your Supabase dashboard</h2>
+<p>Log in at supabase.com, open the project this app uses (if you remixed someone else's app, create a fresh project of your own), then go to <strong>Settings, then API</strong>. That one page has both values:</p>
+<ul>
+  <li><strong>Project URL</strong>: looks like <code>https://abcdefghij.supabase.co</code>. This is <code>VITE_SUPABASE_URL</code>.</li>
+  <li><strong>Publishable key</strong> (starts with <code>sb_publishable_</code>) or the legacy <code>anon</code> key (a long JWT starting with <code>eyJ</code>). This is <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> or <code>VITE_SUPABASE_ANON_KEY</code>. Never put the <code>service_role</code> or <code>sb_secret_</code> key in frontend env vars; those bypass Row Level Security and anyone can read them from your shipped bundle.</li>
+</ul>
+<p>If you do not know which Supabase project the app was built against, check Lovable: the project's Supabase integration panel shows the connected project. Copy URL and key from the same project in one sitting so they cannot mismatch.</p>
+
+<h2>Step 3: create the .env file for local dev</h2>
+<p>In the repo root (the folder with <code>package.json</code>), create a file named exactly <code>.env</code>:</p>
+<pre><code>VITE_SUPABASE_URL=https://abcdefghij.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_xxxxxxxxxxxx</code></pre>
+<p>Three Vite-specific rules people trip on:</p>
+<ol>
+  <li><strong>The <code>VITE_</code> prefix is mandatory.</strong> Vite only exposes variables starting with <code>VITE_</code> to browser code. A variable named plain <code>SUPABASE_URL</code> is invisible to the app.</li>
+  <li><strong>The names must match the code character for character.</strong> If the code reads <code>VITE_SUPABASE_ANON_KEY</code>, a var named <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> does nothing.</li>
+  <li><strong>Restart the dev server.</strong> Vite reads <code>.env</code> at startup. If <code>npm run dev</code> was already running when you created the file, stop it (Ctrl+C) and run it again, then hard-refresh the browser. This one detail explains most "I added the .env and it is still blank" cases.</li>
+</ol>
+
+<h2>Step 4: set the same variables on Vercel or Netlify</h2>
+<p>Your <code>.env</code> file stays on your machine; the deploy host never sees it. Set the variables in the host's dashboard:</p>
+<ul>
+  <li><strong>Vercel</strong>: open the project, then Settings, then Environment Variables. Add each variable name and value, apply to Production (and Preview if you use it).</li>
+  <li><strong>Netlify</strong>: Site configuration, then Environment variables, then Add a variable.</li>
+</ul>
+<p>Paste raw values with no surrounding quotes and no trailing spaces or newlines. Then <strong>redeploy</strong>. Vite bakes env values into the JavaScript bundle at build time, so adding variables changes nothing until a fresh build runs. Trigger a new deploy from the host's UI or push any commit.</p>
+
+<h2>Step 5: make the repo survivable for the next person (and the next deploy)</h2>
+<p>Two small changes prevent this whole class of failure from coming back:</p>
+<ul>
+  <li><strong>Commit a <code>.env.example</code></strong> listing every variable name with placeholder values. It holds no secrets, so it belongs in git, and anyone cloning the repo (including future you, and deploy hosts, and diagnosis tools) can see exactly what the app needs.</li>
+  <li><strong>Stop the import-time throw.</strong> In <code>src/integrations/supabase/client.ts</code>, do not throw when the vars are missing. Export a flag instead and let the app render a readable setup message. This is exactly the fix we shipped on the campus app: instead of crashing before React mounted, the client module exports a config-error state and the app shows a setup screen telling you which variable is missing. A minimal version:</li>
+</ul>
+<pre><code>const url = import.meta.env.VITE_SUPABASE_URL;
+const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+export const supabaseConfigError = !url || !key
+  ? "Missing VITE_SUPABASE_URL or VITE_SUPABASE_PUBLISHABLE_KEY. Copy .env.example to .env and fill it in."
+  : null;
+
+export const supabase = supabaseConfigError
+  ? (null as never)
+  : createClient(url, key);</code></pre>
+<p>Then in your top-level component, if <code>supabaseConfigError</code> is set, render that message instead of the app. A blank screen becomes a one-line instruction.</p>
+
+<h2>If the env vars are set and it is still broken, check these</h2>
+<ul>
+  <li><strong>Home page works but /dashboard 404s on refresh (deployed only).</strong> That is not env at all. It is the missing single-page-app rewrite on your host: every path must serve <code>index.html</code>. On Netlify add a <code>_redirects</code> file with <code>/* /index.html 200</code>; on Vercel add a <code>vercel.json</code> rewrite of all paths to <code>/index.html</code>.</li>
+  <li><strong>App renders but every request 401s with "Invalid API key".</strong> The vars exist but the key is wrong, truncated, or from a different project. See our <a href="supabase-invalid-api-key.html">Supabase Invalid API key guide</a>.</li>
+  <li><strong>Login bounces to the wrong URL.</strong> Supabase Auth still points at the Lovable preview domain. In Supabase go to Authentication, then URL Configuration, and add your localhost and deployed URLs.</li>
+  <li><strong>You remixed someone else's app and their database schema is missing.</strong> Env vars point the app at your fresh Supabase project, but that project has no tables. Check the repo's <code>supabase/migrations</code> folder and apply the migrations to your project, or the app will render and then fail on every query.</li>
+</ul>
+
+<h2>Still stuck?</h2>
+<div class="card">
+<p><strong>Run the instant diagnosis.</strong> Paste your public repo URL into the form and an automated clean-room check reports what is broken: install, build, missing env config, and render, with the exact blocker named, in minutes, free. This guide's failure class is the one it catches best; it is how we found the import-time crash in the campus app. Private repo or zip? Email works too.</p>
+<a class="cta" href="https://github.com/dylancaponi/vibe-code-rescue/issues/new?template=diagnose.yml">Get an instant free diagnosis</a>
+<p class="note"><a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis%20(GitHub%20export%20blank%20screen)">Or email me instead</a>. Fixes with 24 hour turnaround start at $95.</p>
+</div>
+</main>
+<footer>
+  <div class="inner"><a href="../">Vibe Code Rescue</a>. Broken AI built apps diagnosed free and fixed in 24 hours.</div>
+</footer>
+</body>
+</html>

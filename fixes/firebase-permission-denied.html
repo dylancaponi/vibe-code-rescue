@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>"FirebaseError: Missing or insufficient permissions": why your Firebase app worked for a month then stopped</title>
+<meta name="description" content="Your AI built app throws FirebaseError: Missing or insufficient permissions, or Firestore permission-denied, often exactly 30 days after launch. It is your security rules, usually an expired test mode timestamp. Here is how to diagnose and fix it.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/firebase-permission-denied.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>"Missing or insufficient permissions": the Firestore error that hits AI built apps after 30 days</h1>
+<p class="lead">You built an app with Bolt, v0, Cursor, or Replit Agent on top of Firebase. It worked fine, maybe for weeks. Then one day every screen is empty, nothing saves, and the browser console shows <code>FirebaseError: Missing or insufficient permissions</code> with code <code>permission-denied</code>. Your data is still there and your code has not changed. What changed is that a security rule stopped saying yes. Usually it is a rule with an expiry date baked in, and the date passed.</p>
+
+<h2>The symptom: the app just looks empty</h2>
+<p>Firestore permission errors rarely crash anything visible. The read fails, the app renders with no data, and the page looks like a design bug: empty lists, blank dashboards, spinners that never resolve. The real evidence is in devtools. Press F12, open the Console tab, and reload. If you see <code>FirebaseError: Missing or insufficient permissions</code> or any error with code <code>permission-denied</code>, stop debugging your frontend. The app looks broken but the block is on the backend, in your Firestore security rules. This is the same shape as the <a href="supabase-data-not-showing.html">Supabase data not showing problem</a>, just wearing Firebase clothes.</p>
+
+<h2>Cause 1: your test mode rules expired (the "worked for a month then broke" classic)</h2>
+<p>When a Firestore database is created in test mode, which is what most AI builders and most humans pick to get moving, Firebase writes rules like this:</p>
+<pre><code>rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if request.time &lt; timestamp.date(2026, 10, 2);
+    }
+  }
+}</code></pre>
+<p>Read that condition carefully. It allows everything only while the current time is before a hardcoded date, set 30 days out from creation. On day 31 every single read and write starts failing with <code>permission-denied</code>, project wide, at once. If your app worked perfectly and then died overnight roughly a month after you set it up, this is almost certainly it, and Firebase even emails a warning to the project owner beforehand, which lands in an inbox nobody checks.</p>
+<p>To confirm: open the <a href="https://console.firebase.google.com/">Firebase console</a>, pick your project, go to Firestore Database, then the Rules tab. The Rules tab shows the exact rules currently live, with the publish date at the top. If you see <code>request.time &lt; timestamp.date(...)</code> with a date in the past, you have found the bug. Do not fix it by bumping the date another month; that just schedules the next outage. Replace the rules with real ones, below.</p>
+
+<h2>Cause 2: rules require login, but the app reads before login exists</h2>
+<p>The other common rule shape is <code>allow read, write: if request.auth != null;</code>, which means "any signed in user". That rule fails in two ways AI builders trigger constantly:</p>
+<ul>
+  <li><strong>The app queries Firestore before sign-in completes.</strong> Auth is asynchronous. If the code fetches data on page load instead of waiting for <code>onAuthStateChanged</code> to report a user, the first queries run with <code>request.auth</code> equal to null and get denied. Symptom: errors on first load, sometimes fine after a refresh. Fix in code: only start Firestore reads after the auth listener fires with a user.</li>
+  <li><strong>The code uses anonymous sign-in, but Anonymous auth was never enabled.</strong> AI tools love generating <code>signInAnonymously(auth)</code>, and it throws if the provider is off. Check the console under Authentication, then Sign-in method: whatever the code calls (Anonymous, Google, Email/Password) must be enabled there. If sign-in fails, <code>request.auth</code> stays null and every rule requiring it denies.</li>
+</ul>
+
+<h2>Cause 3: the rules name collections your app no longer uses</h2>
+<p>Rules match on document paths. If the rules say <code>match /posts/{postId}</code> but a later AI iteration renamed the collection to <code>articles</code>, there is no matching rule for <code>articles</code>, and no matching rule means denied, that is the default. This happens a lot in vibe coded apps because the AI freely renames collections between prompts and never updates the rules. Compare the collection names in the Rules tab against the ones the code actually queries (search the repo for <code>collection(</code>). Every collection the app touches needs a matching rule block.</p>
+
+<h2>Cause 4: rules validate fields the app does not send</h2>
+<p>Stricter rules can check the contents of a write, for example <code>allow create: if request.resource.data.ownerId == request.auth.uid;</code>. If the app writes a document without setting <code>ownerId</code>, or sets a different field name like <code>userId</code>, the check fails and the write is denied even though the user is signed in and the path matches. When reads work but one specific save fails, read the rule for that collection and compare every field it mentions against the object the code sends.</p>
+
+<h2>Cause 5: it might be Storage rules, not Firestore rules</h2>
+<p>Firebase has two separate rule sets: Firestore rules for your database and Storage rules for uploaded files. Both throw permission errors with near identical wording. If the failure happens on an image or file upload or download, you are in Cloud Storage: in the console go to Storage, then its own Rules tab. Storage created in test mode has the same 30 day expiring timestamp and dies the same way. Fixing Firestore rules does nothing for Storage and vice versa, so check which product the failing call targets.</p>
+
+<h2>Reproduce it with the Rules Playground</h2>
+<p>The Rules tab has a built in simulator, the Rules Playground, in the left panel of the rules editor. Set the simulation type (get, list, create, update, delete), enter the exact document path your app uses, toggle Authenticated on or off to mirror your app's state, and run it. It tells you allowed or denied and highlights the exact rule line that made the decision. This is the fastest way to test a fix before publishing, and to prove which of the causes above you are hitting.</p>
+
+<h2>A safe starter rule set for an app with login</h2>
+<p>For the most common vibe coded shape, where each user owns their own documents, keyed by their user id:</p>
+<pre><code>rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Each user reads and writes only their own profile document
+    match /users/{userId} {
+      allow read, write: if request.auth != null &amp;&amp; request.auth.uid == userId;
+    }
+    // Documents owned via an ownerId field
+    match /notes/{noteId} {
+      allow read, update, delete: if request.auth != null
+        &amp;&amp; resource.data.ownerId == request.auth.uid;
+      allow create: if request.auth != null
+        &amp;&amp; request.resource.data.ownerId == request.auth.uid;
+    }
+  }
+}</code></pre>
+<p>Rename <code>notes</code> and <code>ownerId</code> to match your actual collections and fields, add a block per collection, make sure the code sets <code>ownerId</code> on every create, then test each path in the Playground and hit Publish. Publishing takes effect in about a minute, no redeploy of your app needed, because rules live in Firebase, not in your code.</p>
+
+<h2>Do not do this</h2>
+<p>The tempting one line fix is <code>allow read, write: if true;</code>. It makes every error vanish and it makes your entire database public: anyone on the internet with your Firebase config, which ships inside your frontend bundle by design, can read, overwrite, and delete everything. Bots scan for exactly this. The expiring test mode rule exists specifically so people cannot leave a database open forever, so replacing it with a permanently open rule is worse than the outage you started with. If an AI chat suggests it when you paste the error in, refuse. Real rules are ten lines, and you now have a template.</p>
+
+<h2>Still stuck?</h2>
+<div class="card">
+<p><strong>Run the instant diagnosis.</strong> Paste your public repo URL into the form and an automated clean-room check reports what is broken: install, build, render, and config, with the exact blocker named, in minutes, free. Security rules live in your Firebase project rather than your code, so for this one also paste the console error and your current rules from the Rules tab into the issue and I will look at it the same day. Private repo or zip? Email works too.</p>
+<a class="cta" href="https://github.com/dylancaponi/vibe-code-rescue/issues/new?template=diagnose.yml">Get an instant free diagnosis</a>
+<p class="note"><a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis%20(firebase%20permission%20denied)">Or email me instead</a>. Fixes with 24 hour turnaround start at $95.</p>
+</div>
+</main>
+<footer>
+  <div class="inner"><a href="../">Vibe Code Rescue</a>. Broken AI built apps diagnosed free and fixed in 24 hours.</div>
+</footer>
+</body>
+</html>
