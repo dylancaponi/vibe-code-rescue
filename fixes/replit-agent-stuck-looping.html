@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Replit Agent stuck in a loop, keeps making the same mistake: how to break out</title>
+<meta name="description" content="Replit Agent keeps fixing the same bug, burning checkpoints without progress, or made your app worse with every attempt. Here is how to stop the spend, roll back, reset the context, and get a real fix.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/replit-agent-stuck-looping.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>Replit Agent is stuck in a loop and keeps making the same mistake</h1>
+<p class="lead">You told Replit Agent about a bug. It said "I found the issue" and charged you a checkpoint. The bug is still there. You said "it's still broken," it apologized, "fixed" it again, another checkpoint, still broken. Ten rounds later the app is worse than when you started and the credits are gone. This is the single most common way people lose money on Replit, and it has a reliable exit. The order matters: stop the spend, roll back, then restart with a clean prompt and the real error. Here is each step.</p>
+
+<h2>Why the agent loops</h2>
+<p>Two reasons, and neither is fixed by prompting harder.</p>
+<ul>
+  <li><strong>The agent only sees its own chat.</strong> Its entire picture of your app is the conversation history, and after a long debugging session that history is full of its own wrong guesses. Every new attempt is built on top of a week of bad assumptions. The context is poisoned, and adding more messages adds more poison. This is why attempt eleven is usually worse than attempt two.</li>
+  <li><strong>It patches symptoms without using the app.</strong> The agent never opens your app in a browser, clicks the button, and watches what happens the way you do. It reads code, guesses at a cause, and edits. If the guess is wrong, the edit lands somewhere harmless (or harmful) and the real bug never gets touched. So it keeps "fixing" whatever the code looks like it might be, instead of what is actually failing.</li>
+</ul>
+
+<h2>Step 1: stop spending, right now</h2>
+<p>Before any fixing, close the money tap.</p>
+<ol>
+  <li><strong>Stop the agent mid-run.</strong> If it is currently churning, hit the Stop button in the agent pane. Work in progress you did not ask for is not worth paying for.</li>
+  <li><strong>Understand what a checkpoint costs.</strong> Replit Agent bills per checkpoint: each unit of completed work the agent commits is a charge against your credits, whether or not it fixed anything. "I made the fix" and a still-broken app is a normal, billable outcome.</li>
+  <li><strong>Stop replying "it's still broken."</strong> Each retry is a new charge and a new layer of noise in the poisoned context. Vague retries are the loop. From here on you will only send the agent one thing: a precise error, in a fresh chat (steps 3 and 4).</li>
+</ol>
+
+<h2>Step 2: roll back instead of fixing forward</h2>
+<p>After several failed attempts, the fastest route to a working app is backward, not forward. Every checkpoint the agent made is a saved snapshot you can return to.</p>
+<ol>
+  <li>In your Replit workspace, open the agent's chat history and scroll back through the checkpoints, or open App History from the workspace tools to see every saved state with timestamps.</li>
+  <li>Find the last checkpoint where the app actually worked. Match timestamps against your memory: "it was fine before I asked for the login change Tuesday" tells you exactly where to land.</li>
+  <li>Use the rollback option on that checkpoint to restore it. Everything after it, including the pile of failed fixes, is discarded from the working app.</li>
+</ol>
+<p>Rolling back feels like losing progress. It is not. The "progress" since that checkpoint is the stack of wrong edits you have been paying for. You are keeping the app and discarding the damage.</p>
+
+<h2>Step 3: get the real error yourself</h2>
+<p>Separate two things that feel like one: the agent being unable to fix the bug, and the app being broken. The app does not need the agent to tell you what is wrong. It will tell you directly.</p>
+<ol>
+  <li>Open your app in a new browser tab, the same way a visitor would (the deployed URL or the webview's "open in new tab" button).</li>
+  <li>Press F12 to open the browser's developer tools and click the Console tab. This is where the app logs its own errors.</li>
+  <li>Reproduce the bug: click the button, submit the form, load the page that fails. A red error line will usually appear.</li>
+  <li>Copy the entire error text, exactly. Something like <code>TypeError: Cannot read properties of undefined (reading 'map')</code> plus a file name is worth more than fifty rounds of "it's still broken."</li>
+</ol>
+<p>Most loops end at this step. The agent has been guessing because it never had the real error string. Given the exact message, it usually fixes the bug in one checkpoint.</p>
+
+<h2>Step 4: start a fresh chat with one precise prompt</h2>
+<p>Do not paste the error into the old thread. The old thread is the problem. Start a new agent chat so the agent begins with zero wrong assumptions, and write one tight prompt with three parts:</p>
+<ul>
+  <li><strong>The symptom:</strong> "When I click Save on the profile page, nothing is saved and the page shows a spinner forever."</li>
+  <li><strong>The expected behavior:</strong> "It should save and show the updated profile."</li>
+  <li><strong>The exact error:</strong> paste the Console error text from step 3, word for word.</li>
+</ul>
+<p>Then add one sentence of scope: "Fix only this. Do not refactor or change anything else." Small scoped asks get small scoped fixes. "Fix my app" gets a rewrite of things that were not broken, which is how this loop started.</p>
+
+<h2>Step 5: know when to eject</h2>
+<p>If a clean prompt with the real error still does not land the fix, stop feeding the meter. Nothing about your app is trapped in Replit:</p>
+<ul>
+  <li><strong>The code is ordinary.</strong> Download it as a zip from the workspace menu (or push it to GitHub). Under the hood it is a normal React and Node project that any developer, or any outside tool, can open and fix.</li>
+  <li><strong>Your secrets are readable.</strong> API keys and passwords the agent configured live in the workspace's Secrets tab. Copy them out before you need them.</li>
+  <li><strong>The database is standard Postgres.</strong> Replit's built-in database is Neon Postgres. Your <code>DATABASE_URL</code> from Secrets works from anywhere, and <code>pg_dump</code> gives you a full backup. Your data comes with you.</li>
+</ul>
+<p>A human looking at the actual running app usually finds in minutes what the loop spent your credits not finding, precisely because they debug the way the agent cannot: run it, click it, read the error.</p>
+
+<h2>Still stuck?</h2>
+<div class="card">
+<p><strong>Run the instant diagnosis.</strong> Paste your public repo URL into the form and an automated clean-room check reports what is broken: install, build, missing env config, and render, with the exact blocker named, in minutes, free. It is exactly the "execute the app like a user" step the looping agent never does. Paste the Console error from step 3 into the issue too and I will look at it the same day. Private repo or zip? Email works too.</p>
+<a class="cta" href="https://github.com/dylancaponi/vibe-code-rescue/issues/new?template=diagnose.yml">Get an instant free diagnosis</a>
+<p class="note"><a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis%20(agent%20stuck%20in%20loop)">Or email me instead</a>. Fixes with 24 hour turnaround start at $95.</p>
+</div>
+</main>
+<footer>
+  <div class="inner"><a href="../">Vibe Code Rescue</a>. Broken AI built apps diagnosed free and fixed in 24 hours.</div>
+</footer>
+</body>
+</html>

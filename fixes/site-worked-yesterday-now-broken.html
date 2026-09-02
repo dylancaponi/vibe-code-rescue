@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My app worked yesterday and I changed nothing, now it is blank or broken: the fix</title>
+<meta name="description" content="Your Lovable, Bolt, or Replit app worked yesterday and suddenly stopped, with zero changes on your side. That means a dependency changed underneath it. Here are the seven usual suspects and a two minute check for each.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/site-worked-yesterday-now-broken.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>My app worked yesterday and I changed nothing. Now it is blank or broken.</h1>
+<p class="lead">You built an app with Lovable, Bolt, v0, Replit, or Cursor. It worked fine yesterday. Today it is blank, erroring, or half dead, and you did not touch it. Here is the key insight: if you did not deploy, your code did not change. Something your app <em>depends on</em> changed underneath it. That short list of dependencies (databases, keys, quotas, third party APIs, domains, the platform itself) is exactly what this page walks through, with a two minute check for each.</p>
+
+<h2>First: prove it is real, not your browser</h2>
+<p>Before blaming anything, rule out a cache red herring. Open the site in an incognito or private window, or hard refresh with Ctrl+Shift+R (Cmd+Shift+R on Mac). Browsers, and especially service workers (a background script that caches a copy of a site for offline use), can serve you a stale dead version while the live site is fine, or the reverse. If the app works in incognito, the app is fine: in devtools (press F12) go to Application, then Service Workers, click Unregister, and reload. If it is broken in incognito too, it is real. Keep reading.</p>
+
+<h2>Find the culprit in 5 minutes</h2>
+<ol>
+  <li>Open the broken page in incognito. Press F12 to open devtools.</li>
+  <li>Click the Console tab. Red text here names what failed first. Screenshot it.</li>
+  <li>Click the Network tab and reload the page. Look for the first request shown in red, or with a status of 401, 403, 402, 429, or 5xx.</li>
+  <li>Click that request and read the domain it talks to: <code>supabase.co</code>, <code>neon.tech</code>, some API, your own backend. Whoever it talks to is your suspect.</li>
+  <li>Match the suspect to the causes below. A database domain points to cause 1, a 401 or 403 to cause 2, a 402 or 429 to cause 3, a strange third party domain to cause 4.</li>
+</ol>
+
+<h2>Cause 1: your free tier database got paused</h2>
+<p>The single most common cause of "worked yesterday, blank today" with no changes. Supabase pauses free tier projects after about a week without activity. Replit and Neon free databases can also be suspended or disabled. A paused database refuses every request, so an app that loads its content from the database renders as a blank page or an endless spinner.</p>
+<ul>
+  <li><strong>Spot it:</strong> in the Network tab, requests to <code>supabase.co</code> or <code>neon.tech</code> fail outright or hang with no response.</li>
+  <li><strong>Supabase:</strong> log in at supabase.com, open your project. A paused project shows a paused banner and a Restore button on its home page. Click Restore, wait a few minutes, reload your app.</li>
+  <li><strong>Neon or Replit:</strong> open the database dashboard and look for a suspended or disabled state with a resume option.</li>
+  <li><strong>Prevent it:</strong> open the app once a week, or upgrade the project so it stays awake.</li>
+</ul>
+
+<h2>Cause 2: a key or token expired or was rotated</h2>
+<p>Keys are the passwords your app uses to talk to other services, and several kinds die on a timer with no action from you:</p>
+<ul>
+  <li><strong>Supabase legacy keys disabled.</strong> Supabase has been migrating projects from old JWT keys to new <code>sb_publishable_</code> keys, and the platform can disable legacy keys. Every request then 401s overnight. Check your project's Settings, then API page: if legacy keys show as disabled, re-enable them as a stopgap or swap the app to the new key. Full walkthrough in the <a href="supabase-invalid-api-key.html">Invalid API key guide</a>.</li>
+  <li><strong>Trial API keys expiring.</strong> The AI may have wired in an API on a free trial (a maps key, an AI model key). Trials end. The Network tab shows 401 or 403 from that API's domain; log into that service and check the key's status.</li>
+  <li><strong>Google login stops working after 7 days.</strong> If your app uses "Sign in with Google" and its OAuth consent screen is still in Testing mode, Google expires user sessions after 7 days and can block sign in entirely. Fix: in Google Cloud Console, APIs and Services, OAuth consent screen, publish the app to Production.</li>
+</ul>
+
+<h2>Cause 3: you hit a quota or billing cliff</h2>
+<p>Free tiers have monthly limits: emails sent, serverless function invocations, database rows, bandwidth. Two flavors of sudden death: you ran out mid month (things break on a random Tuesday), or a limit reset and a misconfiguration surfaced on the 1st. Also check the boring one: the card on file expired and the provider downgraded or froze the account. Look for status 402 (payment required) or 429 (too many requests) in the Network tab, then open the billing or usage page of the service that returned it. Most providers email a warning first, so search your inbox for the provider's name.</p>
+
+<h2>Cause 4: a third party service changed under you</h2>
+<p>AI builders love wiring in external APIs, and those APIs change: a response format shifts, an endpoint moves, a formerly open API now requires a key. Your code did not change, but the answer it gets back did, and the app crashes parsing it. The Console tab usually shows an error right after a request to the third party domain. Fix options: check that service's changelog or docs for the new format, or ask your AI builder to update the integration against the current API.</p>
+
+<h2>Cause 5: your domain or certificate expired</h2>
+<p>If the site shows a registrar parking page, "this site can't be reached", or a browser security warning instead of your app, the domain renewal lapsed or the SSL certificate (the padlock that makes https work) expired. Log into wherever you bought the domain and check its expiry date and that auto renew is on with a working card. Note the hosted subdomain often still works (your-app.vercel.app, your-app.lovable.app) while the custom domain is dead, which confirms this cause instantly.</p>
+
+<h2>Cause 6: the platform itself broke or migrated</h2>
+<p>Sometimes it is genuinely not you. Check the status pages before deep debugging: <a href="https://status.supabase.com">status.supabase.com</a>, <a href="https://replit.status.page">replit.status.page</a>, <a href="https://www.vercel-status.com">vercel-status.com</a>, and the status page of whatever hosts you. Beyond outages, platforms run migrations that break old projects: a recent example class is Replit migrating databases to Neon, which left apps on legacy databases unable to connect until their owners migrated. Search the platform's changelog or forum for the date your app died.</p>
+
+<h2>Cause 7: it only looks broken (cache and service workers, again)</h2>
+<p>If everything above checks out and the app works in incognito or on your phone but not in your usual browser, you are the only person seeing it broken. Unregister the service worker as described at the top, clear site data (devtools, Application, Storage, Clear site data), and reload. Always run the incognito test first on any "suddenly broken" report from a user too. It takes ten seconds and saves an hour.</p>
+
+<h2>Still stuck?</h2>
+<div class="card">
+<p><strong>Run the instant diagnosis.</strong> Paste your public repo URL into the form and an automated clean-room check reports what is broken: install, build, missing env config, and render, with the exact blocker named, in minutes, free. Since this class of breakage usually lives in a dashboard rather than the repo, also paste your Console error and the first failing request from the Network tab into the issue and I will look the same day. Private repo or zip? Email works too.</p>
+<a class="cta" href="https://github.com/dylancaponi/vibe-code-rescue/issues/new?template=diagnose.yml">Get an instant free diagnosis</a>
+<p class="note"><a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis%20(worked%20yesterday%2C%20now%20broken)">Or email me instead</a>. Fixes with 24 hour turnaround start at $95.</p>
+</div>
+</main>
+<footer>
+  <div class="inner"><a href="../">Vibe Code Rescue</a>. Broken AI built apps diagnosed free and fixed in 24 hours.</div>
+</footer>
+</body>
+</html>

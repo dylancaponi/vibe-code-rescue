@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vercel "500: INTERNAL_SERVER_ERROR" FUNCTION_INVOCATION_FAILED: how to actually fix it</title>
+<meta name="description" content="Your deployed Vercel app shows 500: INTERNAL_SERVER_ERROR, Code: FUNCTION_INVOCATION_FAILED, or This Serverless Function has crashed. Here is where the real error hides and the six causes that explain almost every crash.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/vercel-function-invocation-failed.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>Vercel says 500: INTERNAL_SERVER_ERROR, FUNCTION_INVOCATION_FAILED</h1>
+<p class="lead">You built an app with v0, Lovable, Bolt, Cursor, or Replit, deployed it to Vercel, and now some page or API call shows a plain error screen: <code>500: INTERNAL_SERVER_ERROR</code>, <code>Code: FUNCTION_INVOCATION_FAILED</code>, sometimes with the line "This Serverless Function has crashed." That screen means your server-side code threw an error. It tells you nothing about why, on purpose, so visitors do not see your internals. The why is sitting in a log almost nobody knows exists. Start there, then check the six causes below. Each check takes about two minutes.</p>
+
+<h2>Step 0: read the actual crash reason in the logs</h2>
+<p>Vercel records the real error message and stack trace for every crash. A stack trace is the list of lines that shows exactly what failed and where. To see it:</p>
+<ol>
+  <li>Go to <code>vercel.com</code>, log in, and click your project.</li>
+  <li>Click the <strong>Logs</strong> tab in the top navigation (on some views it is under Observability, then Logs).</li>
+  <li>Reload the broken page on your live site so a fresh crash gets logged, then look for a red row marked 500 or Error.</li>
+  <li>Click the row. The panel that opens shows the message, something like <code>Error: STRIPE_SECRET_KEY is not defined</code> or <code>Cannot find module 'fs'</code>, plus the file and line it came from.</li>
+</ol>
+<p>That message usually points straight at one of the causes below. If you paste it into the free diagnosis form at the bottom of this page, it is often enough to name the fix outright.</p>
+
+<h2>Cause 1: a server-side env var exists locally but not on Vercel</h2>
+<p>This is the number one cause. Secret keys like <code>STRIPE_SECRET_KEY</code>, <code>DATABASE_URL</code>, <code>SUPABASE_SERVICE_ROLE_KEY</code>, or <code>OPENAI_API_KEY</code> live in your local <code>.env</code> file, and <code>.env</code> is gitignored, so Vercel never got them. Server code reads <code>undefined</code>, then crashes the moment it tries to use the value. Note these are the vars <em>without</em> a <code>NEXT_PUBLIC_</code> prefix; a missing public var breaks the browser side, but a missing secret one crashes the function itself.</p>
+<ol>
+  <li>In the Vercel dashboard: your project, then <strong>Settings</strong>, then <strong>Environment Variables</strong>.</li>
+  <li>Compare that list against your local <code>.env</code> file line by line. Add every missing one, exact same name, for the Production environment (and Preview if you use preview deploys).</li>
+  <li><strong>Redeploy.</strong> Env vars are read at deploy time. Go to the Deployments tab, open the latest deployment's three-dot menu, and click Redeploy. Adding a var without redeploying changes nothing, which explains most "I added it and it still 500s" threads.</li>
+</ol>
+
+<h2>Cause 2: every single route 500s at once</h2>
+<p>If literally the whole app is down, not just one page, some file is crashing at import time: code that runs the moment the file loads, before any request is handled. The classic is an AI-generated client that throws when its env var is missing, like <code>new Stripe(process.env.STRIPE_SECRET_KEY)</code> or a Supabase admin client created at the top of a shared file. One missing var, and every route that touches that file dies on cold start. The log from Step 0 will show the throw happening at the top of a file, not inside a request handler. Fix the env var per Cause 1, or move the client creation inside the function that uses it so only that route depends on it.</p>
+
+<h2>Cause 3: wrong runtime, or Node-only code on the Edge</h2>
+<p>Vercel functions run in one of two environments: the full Node.js runtime, or the lighter Edge runtime. Edge is fast but cannot use Node APIs like <code>fs</code> (reading files), <code>path</code>, native modules, or many database drivers. AI tools sometimes emit <code>export const runtime = 'edge'</code> or an Edge middleware that imports Node-only code, and the log shows errors like <code>Cannot find module 'fs'</code> or a webpack "not supported in the Edge Runtime" message. To check: search your code for <code>runtime = 'edge'</code> or <code>runtime: 'edge'</code>. If the crashing file has it and imports anything Node flavored, change it to <code>export const runtime = 'nodejs'</code> and redeploy. Also, writing files to disk does not work on serverless at all except in <code>/tmp</code>, and even that vanishes between requests.</p>
+
+<h2>Cause 4: the timeout variant, FUNCTION_INVOCATION_TIMEOUT</h2>
+<p>If your error code says <code>FUNCTION_INVOCATION_TIMEOUT</code> instead, the function did not crash, it ran out of time. The Hobby (free) plan cuts functions off around 10 seconds by default. Three usual suspects: a database that is slow to wake up (see Cause 6), a missing <code>await</code> so the function waits on something that never resolves, or an accidental infinite loop or retry storm in generated code. The log timestamps in Step 0 show how long the invocation ran. If it always dies right at the limit, find the slow call, or raise <code>maxDuration</code> in the route file or <code>vercel.json</code> (paid plans allow more).</p>
+
+<h2>Cause 5: the database is unreachable from Vercel</h2>
+<p>Works on your laptop, 500s in production, and the log mentions <code>ECONNREFUSED</code>, <code>ETIMEDOUT</code>, or "too many connections"? Two separate problems hide here:</p>
+<ul>
+  <li><strong>The free tier database is paused.</strong> Supabase pauses free projects after about a week idle; Neon suspends after minutes. Open your database dashboard, look for a paused banner, click restore or just run a query to wake it, then retry your app. The first request after waking can also be slow enough to trip Cause 4.</li>
+  <li><strong>You are using the direct connection string instead of the pooled one.</strong> Serverless spins up many short-lived copies of your function, and each one opening its own database connection exhausts the limit fast. Supabase: use the pooler string from Connect in your project dashboard, the one on port <code>6543</code> (pgbouncer), not <code>5432</code>. Neon: use the connection string whose host contains <code>-pooler</code>. Put the pooled string in <code>DATABASE_URL</code> on Vercel and redeploy.</li>
+</ul>
+
+<h2>Cause 6: it deployed fine before, and you changed nothing</h2>
+<p>Then something external changed: a free database got paused (Cause 5), an API key was rotated or expired, a third-party service you call is down, or a dependency update came in through a fresh build. The log from Step 0 names the failing call. Quick isolation trick: in the Deployments tab, find the last deployment that worked and click Promote to Production (or "Instant Rollback"). If the old build fails too, the problem is external, almost always a paused database or dead key, not your code.</p>
+
+<h2>Still stuck?</h2>
+<div class="card">
+<p><strong>Run the instant diagnosis.</strong> Paste your public repo URL into the form and an automated clean-room check reports what is broken: install, build, missing env config, and render, with the exact blocker named, in minutes, free. It catches the missing env var and import-crash cases directly. Runtime-only failures live in your Vercel logs rather than the repo, so also paste the error message and stack trace from Step 0 (strip out any secret values) into the issue and I will look the same day. Private repo or zip? Email works too.</p>
+<a class="cta" href="https://github.com/dylancaponi/vibe-code-rescue/issues/new?template=diagnose.yml">Get an instant free diagnosis</a>
+<p class="note"><a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis%20(Vercel%20FUNCTION_INVOCATION_FAILED)">Or email me instead</a>. Fixes with 24 hour turnaround start at $95.</p>
+</div>
+</main>
+<footer>
+  <div class="inner"><a href="../">Vibe Code Rescue</a>. Broken AI built apps diagnosed free and fixed in 24 hours.</div>
+</footer>
+</body>
+</html>
