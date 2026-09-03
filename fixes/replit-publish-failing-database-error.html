@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Replit publish failing with database errors while production is fine: the fix</title>
+<meta name="description" content="Replit publish keeps failing with development database errors even though your live app works. It is the dev DB connection check. Here is the 20 minute unblock.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/replit-publish-failing-database-error.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>Replit publish keeps failing with database errors, but your live app is fine</h1>
+<p class="lead">You hit publish on Replit and it fails with a database error. The confusing part: your production app is still up, and the production database checks out healthy. You did not change any database code. This is almost always the development database, not yours to blame. Replit's dev database is Neon Postgres under the hood, and publish runs a connection check against it. When the dev endpoint is broken or disabled on Replit's side, the check fails and publish is blocked even though production is perfectly fine. On September 1, 2026 Replit's own status page confirmed a wave of exactly this: "some users are unable to publish their apps and may see errors related to databases". You do not have to wait for support. There is a 20 minute unblock.</p>
+
+<h2>First, check that it is not you</h2>
+<ol>
+  <li>Open <a href="https://status.replit.com" rel="nofollow">status.replit.com</a> before debugging anything in your app. This class of failure is often Replit-side, and if there is an active incident about publishing or databases, your code is innocent.</li>
+  <li>Read the publish error carefully. If it names the database connection, and your deployed app still works, the failing check is against the development database, a separate database from production.</li>
+  <li>Confirm production is healthy: open your live app, load a page that reads from the database. If that works, your data and your prod DB are fine. Only the dev DB is broken.</li>
+</ol>
+
+<h2>Why waiting for support is not a plan</h2>
+<p>Users in this exact incident reported support tickets crawling for over a week, and being told the issue was fixed three separate times while publishing stayed broken. If your business needs to ship a change today, the queue is not your path. The good news: when production is separate and healthy, the development database is usually disposable. It holds test data, not your users. So you can replace it with a database you own and stop depending on the broken endpoint entirely.</p>
+
+<h2>The 20 minute unblock</h2>
+<ol>
+  <li><strong>Create a free Neon account.</strong> Go to neon.tech, sign up on the free tier, and create a project. This is the same Postgres Replit uses under the hood, so nothing in your app has to change. Copy the connection string it gives you.</li>
+  <li><strong>Load your schema into the new database.</strong> Two ways, pick whichever fits your project:
+    <ul>
+      <li>If your project has migrations, run them against the new database. Replit's Drizzle-based templates usually have this as <pre><code>npm run db:push</code></pre></li>
+      <li>Or copy the schema from your working production database: <pre><code>pg_dump --schema-only "$PROD_DATABASE_URL" &gt; schema.sql
+psql "$NEW_NEON_URL" &lt; schema.sql</code></pre> Schema only. You do not want production data sitting in dev.</li>
+    </ul>
+  </li>
+  <li><strong>Point Replit's development DATABASE_URL at the new Neon database.</strong> In your Replit secrets, change the development <code>DATABASE_URL</code> to the Neon connection string. Do not touch the production one.</li>
+  <li><strong>Publish again.</strong> The connection check now runs against a database that answers, and publish passes. End to end this is about 20 minutes, most of it waiting on signup emails.</li>
+</ol>
+
+<h2>If dev and prod data look mixed, stop</h2>
+<p>A related incident hit at the same time: for some users, development and production databases got crossed. One user's trading app fired real trades at doubled leverage because dev code was talking to a live account. If you see production data showing up in dev, or dev data in prod, do not fix anything yet. First, <code>pg_dump</code> both databases immediately, as backup and as evidence, before anything mutates them. Second, rotate every API key the app holds, especially anything touching money. Third, do not let the AI agent run "fixes" until you know for certain which database is which. An agent debugging against the wrong database makes this worse fast.</p>
+
+<h2>The lesson</h2>
+<p>Three habits make this a non-event next time. Nightly <code>pg_dump</code>, as a cron job or scheduled deployment, so any database can die without taking your data. Never let the dev environment hold credentials that can touch real money or real user data: paper trading keys, testnet keys, and sandbox accounts only. And keep dev and prod secrets separate and clearly named, so you, and the AI agent, always know which database a fix is aimed at. Verify which one you are pointed at before letting the agent touch database issues at all.</p>
+
+<h2>Do not do this</h2>
+<p>Do not delete your Replit project or its databases hoping a fresh start clears the error. Do not let the agent rewrite your database code; the code was never the problem. And do not skip the status page check: if the incident is Replit-wide, hours of "debugging" your own app fixes nothing.</p>
+
+<h2>Still stuck?</h2>
+<div class="card">
+<p><strong>Run the instant diagnosis.</strong> Paste your public repo URL into the form and an automated clean-room check reports what is broken: install, build, render, and config, with the exact blocker named, in minutes, free. Publish failures live partly in your Replit account rather than your code, so for this one also paste the exact publish error into the issue and I will look at it the same day. Private repo or zip? Email works too.</p>
+<a class="cta" href="https://github.com/dylancaponi/vibe-code-rescue/issues/new?template=diagnose.yml">Get an instant free diagnosis</a>
+<p class="note"><a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis%20(publish%20failing)">Or email me instead</a>. Fixes with 24 hour turnaround start at $95.</p>
+</div>
+</main>
+<footer>
+  <div class="inner"><a href="../">Vibe Code Rescue</a>. Broken AI built apps diagnosed free and fixed in 24 hours.</div>
+</footer>
+</body>
+</html>
