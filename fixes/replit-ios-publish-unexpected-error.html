@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Replit iOS publish fails with "unexpected error": what it means and the workaround</title>
+<meta name="description" content="Replit's iOS app publish keeps failing with a generic unexpected error before submission, and support is backlogged. Here is how to confirm it is Replit's pipeline, and how to build and submit your app yourself with Expo EAS.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/replit-ios-publish-unexpected-error.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>Replit iOS publish fails with "unexpected error" before it ever submits</h1>
+<p class="lead">Your mobile app runs fine in the Replit preview. You hit publish to send it to the App Store, and it dies almost instantly with a generic "unexpected error". No log, no error code, no hint. You retry, same thing. You ask support and get silence. This exact failure has been hitting Replit users since late August 2026: iOS publishes fail before submission, support tickets sit unanswered for days, and r/replit has filled up with the same report. If this is you, the most important thing to know is that the error is almost certainly not in your app. Here is how to confirm that, and how to get your app to the App Store without waiting for Replit's publish button to come back.</p>
+
+<h2>Why the error is a black box</h2>
+<p>When you publish an iOS app from Replit, your app does not go straight to Apple. Replit's pipeline wraps two big steps: it builds your app with Expo's build service (EAS), then submits the result to the App Store. Both of those steps produce detailed logs. Replit shows you none of them. When something inside that pipeline breaks on their side, all you see is "unexpected error", and nothing you change in your app will make it go away, because your app was never the problem. That is why people rebuild screens, rename bundles, and burn agent credits for days with zero effect.</p>
+
+<h2>First, check whether it is you or them</h2>
+<ol>
+  <li><strong>Does the app run in preview?</strong> If your app works normally in the Replit preview and on your phone via the preview link, the app itself builds and runs. A genuinely broken app usually fails in preview too.</li>
+  <li><strong>Does publish fail instantly with no detail?</strong> A real build error takes minutes to surface and usually names a file or a setting. An instant failure with a generic message means the pipeline fell over before it even looked at your code.</li>
+  <li><strong>Check for a wider incident.</strong> Open <a href="https://status.replit.com" rel="nofollow">status.replit.com</a> and search <a href="https://www.reddit.com/r/replit/" rel="nofollow">r/replit</a> for "iOS publish". If other people are reporting the same failure the same week, it is their pipeline, and no amount of editing your app will fix it.</li>
+</ol>
+<p>If all three point at Replit, stop debugging your app. You have two real options: route around their publish button, or wait it out the smart way. Both are below.</p>
+
+<h2>The workaround: build and submit it yourself with Expo</h2>
+<p>Here is the part Replit does not advertise: your Replit mobile app is an Expo project under the hood. Expo is a normal, open toolchain that anyone can use directly, for free. That means you can run the exact same build Replit runs, on Expo's own service, with full logs, and even submit to the App Store yourself. You stop depending on Replit's broken button entirely.</p>
+<ol>
+  <li><strong>Get your code out.</strong> In your Replit workspace, download the project as a zip (or push it to GitHub). Unzip it on your computer, or open it in any environment where you can run commands.</li>
+  <li><strong>Create a free Expo account.</strong> Sign up at <a href="https://expo.dev" rel="nofollow">expo.dev</a>. The free tier is enough for this.</li>
+  <li><strong>Install the EAS command line tool and run a build.</strong> In the project folder:
+  <pre><code>npm install -g eas-cli
+eas login
+npx expo prebuild
+eas build --platform ios</code></pre>
+  The <code>prebuild</code> step is only needed if the build asks for it. EAS will walk you through the first-time setup questions with sensible defaults.</li>
+  <li><strong>Read the real logs.</strong> This is the payoff. EAS shows you the entire build, line by line. If there truly is a code or config problem in your app, it stops being an "unexpected error" and becomes a named, visible, fixable error. And if the build goes green, you have proof the app is fine.</li>
+  <li><strong>Use a green build as ammo for your support ticket.</strong> Reply to your Replit ticket with: "The app builds successfully on EAS, build link attached. The failure is in your publish pipeline." That moves your ticket from "user app problem" to "our infrastructure problem", which is a different, faster queue.</li>
+  <li><strong>Submit to Apple directly if you cannot wait.</strong>
+  <pre><code>eas submit --platform ios</code></pre>
+  This sends your green build straight to App Store Connect using your own Apple Developer account. Your app reaches Apple review without Replit's publish button being involved at all.</li>
+</ol>
+
+<h2>A note on Apple credentials</h2>
+<p>Publishing an iOS app requires an Apple Developer account ($99 per year). Replit requires this from you anyway, so you almost certainly already have one. Replit builds through their own pipeline, but the App Store listing is yours, under your account. When you run <code>eas submit</code>, EAS asks you to sign in with that Apple account and can create and manage the signing certificates and provisioning profiles for you automatically. You do not need to understand Apple's signing system. Answer the prompts and let EAS handle it.</p>
+
+<h2>When to just wait instead</h2>
+<p>The EAS route is real command line work. If that is not something you can take on right now, waiting is a legitimate choice, but wait actively, not passively:</p>
+<ul>
+  <li><strong>Reply to your existing support ticket</strong> with your ticket number in the message, and say plainly that publishing is blocked and preview works. Replies bump tickets; new tickets start over at the back.</li>
+  <li><strong>Post in r/replit.</strong> The ReplitSupport account does escalate tickets from there. Include your ticket number in the post. Users in this incident got escalations that way after email went nowhere.</li>
+  <li><strong>Do not ask the agent to "fix publish".</strong> The agent edits your code. It cannot touch Replit's publish pipeline, which is where the failure lives. Every "let me fix that" attempt costs a checkpoint and changes code that was not broken. That is money spent making your app worse while the actual problem sits on Replit's servers.</li>
+</ul>
+
+<h2>Still stuck?</h2>
+<div class="card">
+<p><strong>Run the instant diagnosis.</strong> Paste your public repo URL into the form and an automated clean-room check reports what is broken: install, build, render, and config, with the exact blocker named, in minutes, free. For this one, paste the exact publish error and whether preview works into the issue and I will look at it the same day, including running the EAS build for you if you want the workaround without the command line. Private repo or zip? Email works too.</p>
+<a class="cta" href="https://github.com/dylancaponi/vibe-code-rescue/issues/new?template=diagnose.yml">Get an instant free diagnosis</a>
+<p class="note"><a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis%20(iOS%20publish%20failing)">Or email me instead</a>. Fixes with 24 hour turnaround start at $95.</p>
+</div>
+</main>
+<footer>
+  <div class="inner"><a href="../">Vibe Code Rescue</a>. Broken AI built apps diagnosed free and fixed in 24 hours.</div>
+</footer>
+</body>
+</html>
