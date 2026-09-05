@@ -17,7 +17,7 @@
 // inside Chrome's own sandbox) and appends the finding to the report.
 
 import { execFileSync, spawnSync, spawn } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, writeFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync, rmSync, statSync, openSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
 
 const argv = process.argv.slice(2);
@@ -37,13 +37,28 @@ import { mkdirSync } from 'node:fs';
 const TMP = '/tmp/claude';
 mkdirSync(join(TMP, 'diagnose'), { recursive: true });
 const dir = join(TMP, 'diagnose', repo.replace('/', '__'));
-const env = { ...process.env, npm_config_cache: join(TMP, 'npm-cache') };
+const env = { ...process.env, npm_config_cache: join(TMP, 'npm-cache'), NEXT_TELEMETRY_DISABLED: '1' };
 
 const findings = []; // {severity: 'blocker'|'warn'|'info', cls, title, detail}
 const f = (severity, cls, title, detail) => findings.push({ severity, cls, title, detail });
-const sh = (cmd, args, opts = {}) =>
-  spawnSync(cmd, args, { encoding: 'utf8', env, timeout: (opts.timeoutSec ?? 300) * 1000, cwd: opts.cwd, maxBuffer: 32 * 1024 * 1024 });
+// Output goes to temp FILES, not pipes: tools like next build leave a detached
+// child (telemetry) holding the stdout pipe, which blocks spawnSync past the
+// child's own exit until the timeout fires (observed: 60s build "hangs" 300s).
+let shSeq = 0;
+const sh = (cmd, args, opts = {}) => {
+  const base = join(TMP, `diagnose-sh-${process.pid}-${shSeq++}`);
+  const fo = openSync(`${base}.out`, 'w'), fe = openSync(`${base}.err`, 'w');
+  const r = spawnSync(cmd, args, { env, timeout: (opts.timeoutSec ?? 300) * 1000, cwd: opts.cwd, stdio: ['ignore', fo, fe] });
+  closeSync(fo); closeSync(fe);
+  r.stdout = readFileSync(`${base}.out`, 'utf8');
+  r.stderr = readFileSync(`${base}.err`, 'utf8');
+  rmSync(`${base}.out`, { force: true }); rmSync(`${base}.err`, { force: true });
+  return r;
+};
 const head = (s, n = 6) => (s || '').split('\n').filter(l => l.trim()).slice(0, n).join('\n');
+const tail = (s, n = 8) => (s || '').split('\n').filter(l => l.trim()).slice(-n).join('\n');
+// never emit an empty-detail finding: fall back to the raw output tail
+const orRaw = (filtered, raw, why) => filtered.trim() ? filtered : `${tail(raw)}\n(${why})`;
 const CHROME = process.env.CHROME_PATH
   || ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/usr/bin/google-chrome', '/usr/bin/chromium-browser', '/usr/bin/chromium']
     .find(p => existsSync(p))
@@ -57,12 +72,61 @@ async function renderCheck(dd) {
   const srv = spawn('python3', ['-m', 'http.server', String(port)], { cwd: dd, stdio: 'ignore', env });
   await new Promise(r => setTimeout(r, 1200));
   // Chrome prints the DOM then lingers; the timeout reaps it and stdout is kept
-  const rend = sh(CHROME, ['--headless=new', '--disable-gpu', `--user-data-dir=${join(TMP, 'diagnose-chrome-profile')}`, '--virtual-time-budget=8000', '--dump-dom', `http://127.0.0.1:${port}/`], { timeoutSec: 30 });
+  // CHROME_EXTRA_FLAGS: e.g. "--no-sandbox --disable-dev-shm-usage" inside containers,
+  // where Chrome's SUID sandbox cannot start (the container itself is the isolation there).
+  // Never set it for local runs; locally Chrome's own sandbox is the untrusted-code boundary.
+  const extra = (process.env.CHROME_EXTRA_FLAGS || '').split(/\s+/).filter(Boolean);
+  const rend = sh(CHROME, [...extra, '--headless=new', '--disable-gpu', `--user-data-dir=${join(TMP, 'diagnose-chrome-profile')}`, '--virtual-time-budget=8000', '--dump-dom', `http://127.0.0.1:${port}/`], { timeoutSec: 30 });
   srv.kill();
   const dom = rend.stdout || '';
   const rm2 = dom.match(/<div id="root"[^>]*>([\s\S]*?)<\/div>\s*(?:<script|<\/body)/);
   return { domlen: dom.length, rootlen: rm2 ? rm2[1].trim().length : -1, stderr: head(rend.stderr, 3) };
 }
+// Server render check: no Chrome needed. Start the app's server + an HTTP fetch
+// of its output is the render signal (server crash on boot, 500 on render, error
+// page, or real content). Runs fully inside phase 1's sandbox, where untrusted
+// server code belongs (npm run build already executes repo toolchain code there).
+// Used for Next.js (`next start -p 4199`) and plain Node/Express (`npm start`
+// with PORT=4199; hardcoded-port apps are caught by also polling 3000/5000/8080).
+async function serverCheck(d, bin, args) {
+  const port = 4199;
+  // detached: the command spawns children (npm -> node); kill the whole process group
+  const srv = spawn(bin, args, { cwd: d, detached: true, env: { ...env, PORT: String(port), NODE_ENV: 'production' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  let serr = '', sout = '';
+  srv.stderr.on('data', c => { serr += c; });
+  srv.stdout.on('data', c => { sout += c; });
+  let res = null, exited = false;
+  const t0 = Date.now();
+  while (Date.now() - t0 < 30000) {
+    await new Promise(r => setTimeout(r, 1000));
+    if (srv.exitCode !== null) { exited = true; break; } // server died
+    for (const p of [port, 3000, 5000, 8080]) {
+      try {
+        const rsp = await fetch(`http://127.0.0.1:${p}/`, { signal: AbortSignal.timeout(10000), redirect: 'follow' });
+        res = { status: rsp.status, body: await rsp.text(), port: p };
+        break;
+      } catch { /* not up yet */ }
+    }
+    if (res) break;
+  }
+  try { process.kill(-srv.pid, 'SIGKILL'); } catch { try { srv.kill('SIGKILL'); } catch { /* gone */ } }
+  if (!res) return { up: false, exited, exitCode: srv.exitCode, stderr: tail(serr + sout, 14) };
+  return { up: true, status: res.status, bodylen: res.body.length, body: res.body, stderr: tail(serr, 4) };
+}
+const serverVerdict = (r, cmd) => {
+  if (!r.up && !r.exited) return { severity: 'warn', cls: 'runtime', title: 'Server starts but never answers on a port', detail: `"${cmd}" kept running for 30 seconds without serving HTTP on the assigned port (PORT env var) or the common defaults (3000/5000/8080). Either the app listens on a hardcoded unusual port, or it hangs before listening (often waiting forever on a database connection). Output:\n${r.stderr || '(no output captured)'}` };
+  // macOS artifact, not an app bug: the Replit fullstack template listens with
+  // reusePort: true, and SO_REUSEPORT is unsupported on darwin (ENOTSUP). On
+  // Linux (real deploys, the Apify container) the same listen call works.
+  if (!r.up && process.platform === 'darwin' && /ENOTSUP/.test(r.stderr || ''))
+    return { severity: 'info', cls: 'runtime', inconclusive: true, title: 'Runtime check inconclusive on this machine', detail: `"${cmd}" crashed with listen ENOTSUP, which on macOS almost always means the server sets reusePort: true (the Replit template default). That option only works on Linux, where this app actually deploys, so this is an artifact of the check environment rather than an app bug. Run the check in a Linux container for the real signal.` };
+  if (!r.up) return { severity: 'blocker', cls: 'runtime', title: 'App builds but the server crashes on startup', detail: `The install/build stage succeeded, but "${cmd}" exited with code ${r.exitCode} before serving a single request. Every deploy of this app will show a dead or erroring site. Server output:\n${r.stderr || '(no output captured)'}` };
+  const clientErr = /Application error: a client-side exception/i.test(r.body);
+  if (r.status >= 500) return { severity: 'blocker', cls: 'runtime', title: `App builds but the homepage returns HTTP ${r.status}`, detail: `The server starts, then crashes rendering the homepage. This is what every visitor gets. Almost always a missing environment variable or a data call with no credentials, crashing during server rendering. Server output:\n${r.stderr || '(none)'}` };
+  if (clientErr) return { severity: 'blocker', cls: 'runtime', title: 'Homepage serves an "Application error" page', detail: 'The server responds, but the page it sends is the Next.js client-exception error screen. Users see the error card, not your app.' };
+  if (r.status >= 400) return { severity: 'warn', cls: 'runtime', title: `Homepage returns HTTP ${r.status}`, detail: 'The server runs but the root route errors. If the real app lives on another route this may be benign; if / is the app, users are hitting this.' };
+  return { severity: 'info', cls: 'runtime', title: `Server renders the homepage (HTTP ${r.status}, ${r.bodylen} bytes)`, detail: 'The production server starts and serves real content in a clean environment with no env vars beyond defaults. Failures users see are likely config, auth, or data-layer issues rather than the build.' };
+};
 const runtimeVerdict = r =>
   r.domlen === 0 ? null
     : r.rootlen >= 0 && r.rootlen < 100
@@ -115,7 +179,8 @@ const isNext = !!deps.next;
 const isVite = !!deps.vite;
 const isLovable = !!deps['lovable-tagger'] || (existsSync(join(dir, 'components.json')) && existsSync(join(dir, 'supabase')));
 const usesSupabase = !!deps['@supabase/supabase-js'];
-const stack = isNext ? 'Next.js' : isVite ? (isLovable ? 'Lovable (Vite + React + Supabase)' : 'Vite SPA') : 'Node';
+const isServer = !!(deps.express || deps.fastify || deps.koa || deps.hono);
+const stack = isNext ? 'Next.js' : isVite ? (isLovable ? 'Lovable (Vite + React + Supabase)' : isServer ? 'Vite + Node server' : 'Vite SPA') : isServer ? 'Node server (Express-style)' : 'Node';
 
 // env-var references vs .env.example (playbook failure class 3)
 const grep = sh('grep', ['-rhoE', '(import\\.meta\\.env|process\\.env)\\.[A-Z_0-9]+', 'src', 'app', 'lib', '--include=*.ts', '--include=*.tsx', '--include=*.js', '--include=*.jsx'], { cwd: dir, timeoutSec: 30 });
@@ -148,27 +213,45 @@ if (isVite && (deps['react-router-dom'] || deps['react-router'])) {
 // ---- install ------------------------------------------------------------------
 console.error('[3/6] npm install --ignore-scripts');
 let installOk = false, buildOk = false, distDir = null;
-const inst = sh('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--loglevel=error'], { cwd: dir, timeoutSec: 300 });
-if (inst.status !== 0) {
+const t3 = Date.now();
+// --include=dev: build toolchains (vite, tailwind, tsc) live in devDependencies,
+// and CI-ish environments (NODE_ENV=production, npm_config_omit) silently skip them
+const inst = sh('npm', ['install', '--ignore-scripts', '--include=dev', '--no-audit', '--no-fund', '--loglevel=error'], { cwd: dir, timeoutSec: 300 });
+console.error(`  install: ${((Date.now() - t3) / 1000).toFixed(1)}s status=${inst.status} signal=${inst.signal || ''} ${inst.error ? 'error=' + inst.error.message : ''}`);
+if (inst.status !== 0 || inst.error) {
   const out = (inst.stdout || '') + (inst.stderr || '');
   const eresolve = /ERESOLVE/.test(out);
-  f('blocker', 'install', eresolve ? 'npm install fails with an ERESOLVE dependency conflict' : 'npm install fails',
-    head(out.split('\n').filter(l => /ERR|error|ERESOLVE|peer/.test(l)).join('\n'), 8) +
+  const timedOut = inst.error?.code === 'ETIMEDOUT';
+  f('blocker', 'install', timedOut ? 'npm install hangs (killed after 5 minutes)' : eresolve ? 'npm install fails with an ERESOLVE dependency conflict' : 'npm install fails',
+    timedOut ? `The install never finished. Usually a dependency fetching from a dead or unreachable source. Last output:\n${orRaw('', out, 'raw npm output at kill time')}` :
+    orRaw(head(out.split('\n').filter(l => /ERR|error|ERESOLVE|peer/.test(l)).join('\n'), 8), out, `raw npm output; exit status ${inst.status}${inst.signal ? ', signal ' + inst.signal : ''}`) +
     (eresolve ? '\nThe AI tool pinned package versions that contradict each other. Fix is correcting the conflicting version ranges in package.json, not --force (which hides the problem and breaks later).' : ''));
 } else {
   installOk = true;
   // ---- build ------------------------------------------------------------------
   console.error('[4/6] npm run build');
   if (!pkg.scripts?.build) {
-    f('info', 'build', 'No build script defined', 'package.json has no "build" script; skipped build and runtime checks.');
+    f('info', 'build', 'No build script defined', 'package.json has no "build" script; skipped the build check.');
   } else {
-    const build = sh('npm', ['run', 'build'], { cwd: dir, timeoutSec: 300 });
+    const t4 = Date.now();
+    let build = sh('npm', ['run', 'build'], { cwd: dir, timeoutSec: 300 });
+    console.error(`  build: ${((Date.now() - t4) / 1000).toFixed(1)}s status=${build.status} signal=${build.signal || ''} ${build.error ? 'error=' + build.error.message : ''}`);
+    if (build.error?.code === 'ETIMEDOUT') {
+      // transient hangs observed even with file-based stdio; a false "build hangs"
+      // blocker in a customer report is worse than 5 extra minutes, so verify once
+      console.error('  build timed out; retrying once to rule out a transient hang');
+      const t4b = Date.now();
+      build = sh('npm', ['run', 'build'], { cwd: dir, timeoutSec: 300 });
+      console.error(`  build retry: ${((Date.now() - t4b) / 1000).toFixed(1)}s status=${build.status} ${build.error ? 'error=' + build.error.message : ''}`);
+    }
     const bout = (build.stdout || '') + (build.stderr || '');
-    if (build.status !== 0) {
+    if (build.status !== 0 || build.error) {
       const lines = bout.split('\n').filter(l => /error|Error|ERR|Cannot find/.test(l));
       const missing = bout.match(/Cannot find (?:module|package) '([^']+)'/);
-      f('blocker', 'build', missing ? `Build fails: cannot find module "${missing[1]}"` : 'npm run build fails',
-        head(lines.join('\n'), 8) + (missing ? `\n"${missing[1]}" is imported but missing from package.json dependencies. The AI tool used it without declaring it.` : ''));
+      const timedOut = build.error?.code === 'ETIMEDOUT';
+      f('blocker', 'build', timedOut ? 'Build hangs (killed after 5 minutes)' : missing ? `Build fails: cannot find module "${missing[1]}"` : 'npm run build fails',
+        timedOut ? `The build never finished, on two attempts. Common causes: a build step waiting on a network resource that never responds, or an infinite loop in a config file. Last output before the kill:\n${orRaw('', bout, 'raw build output at kill time')}` :
+        orRaw(head(lines.join('\n'), 8), bout, `raw build output; exit status ${build.status}${build.signal ? ', signal ' + build.signal : ''}`) + (missing ? `\n"${missing[1]}" is imported but missing from package.json dependencies. The AI tool used it without declaring it.` : ''));
     } else {
       buildOk = true;
       distDir = findDist(dir);
@@ -176,9 +259,31 @@ if (inst.status !== 0) {
   }
 }
 
-// ---- runtime white-screen check (Vite SPA output only) ------------------------
-let runtimePending = false, runtimeDone = false;
-if (buildOk && distDir && !isNext && existsSync(CHROME) && existsSync(join(distDir, 'index.html'))) {
+// ---- runtime render check -----------------------------------------------------
+// Vite/static output: serve dist to headless Chrome (needs phase 2 locally).
+// Next.js: `next start` + SSR fetch, no Chrome, completes inside phase 1.
+// Plain Node/Express (incl. Replit fullstack template, where the client builds to
+// dist/public and there is no static index.html to serve): `npm start` + fetch.
+let runtimePending = false, runtimeDone = false, runtimeMode = null;
+const nextBin = join(dir, 'node_modules', '.bin', 'next');
+const canNpmStart = installOk && pkg.scripts?.start && (buildOk || !pkg.scripts?.build);
+if (buildOk && isNext && existsSync(join(dir, '.next')) && existsSync(nextBin)) {
+  console.error('[5/6] runtime render check (next start + SSR fetch)');
+  const r = await serverCheck(dir, nextBin, ['start', '-p', '4199']);
+  console.error(`  up=${r.up} status=${r.status ?? '-'} bodylen=${r.bodylen ?? '-'}`);
+  runtimeDone = true;
+  runtimeMode = 'ssr';
+  const v = serverVerdict(r, 'next start');
+  f(v.severity, v.cls, v.title, v.detail);
+} else if (canNpmStart && !isNext && (!distDir || !existsSync(join(distDir, 'index.html')))) {
+  console.error('[5/6] runtime render check (npm start + HTTP fetch)');
+  const r = await serverCheck(dir, 'npm', ['start']);
+  console.error(`  up=${r.up} exited=${r.exited ?? '-'} status=${r.status ?? '-'} bodylen=${r.bodylen ?? '-'}`);
+  const v = serverVerdict(r, 'npm start');
+  runtimeDone = !v.inconclusive;
+  runtimeMode = 'ssr';
+  f(v.severity, v.cls, v.title, v.detail);
+} else if (buildOk && distDir && !isNext && existsSync(CHROME) && existsSync(join(distDir, 'index.html'))) {
   console.error('[5/6] runtime render check (headless Chrome)');
   const r = await renderCheck(distDir);
   console.error(`  dom=${r.domlen} rootlen=${r.rootlen}`);
@@ -188,6 +293,7 @@ if (buildOk && distDir && !isNext && existsSync(CHROME) && existsSync(join(distD
     if (keep) f('info', 'runtime', 'Runtime render check pending', 'The build succeeded but the headless-browser render check could not run in this environment. It runs as a separate phase 2 step.');
   } else {
     runtimeDone = true;
+    runtimeMode = 'browser';
     const v = runtimeVerdict(r);
     f(v.severity, v.cls, v.title, v.detail);
   }
@@ -203,12 +309,12 @@ const sevLabel = { blocker: 'BROKEN', warn: 'RISK', info: 'NOTE' };
 const verdict = blockers.length
   ? `This app is broken at the ${blockers[0].cls} stage. ${blockers.length === 1 ? 'One blocking problem found.' : blockers.length + ' blocking problems found.'} Details below, worst first.`
   : installOk && buildOk
-    ? 'Good news: this app installs, builds, and renders in a clean environment. The problems users hit are most likely in configuration, auth, or the data layer rather than the code pipeline. Notes below.'
+    ? `Good news: this app installs${runtimeDone ? ', builds, and renders' : ' and builds'} in a clean environment. The problems users hit are most likely in configuration, auth, or the data layer rather than the code pipeline. Notes below.`
     : 'No hard blockers found in the stages we could run. See notes below.';
 
 const report = `# Diagnosis: ${repo}
 
-Stack: ${stack}${usesSupabase ? ' with Supabase' : ''}. Checked: install, build${runtimeDone ? ', runtime render' : ''}, plus static review.
+Stack: ${stack}${usesSupabase ? ' with Supabase' : ''}. Checked: install, build${runtimeDone ? (runtimeMode === 'ssr' ? ', server render' : ', runtime render') : ''}, plus static review.
 
 ## Verdict
 
@@ -222,7 +328,7 @@ ${x.detail}
 `).join('\n') : 'Nothing notable. The repo is in better shape than most AI-generated apps we see.'}
 ## How this was checked
 
-Fresh clone, dependencies installed with lifecycle scripts disabled, production build attempted${runtimeDone ? ', and the built app rendered in a clean headless browser with no stored logins or env vars' : ''}. That isolation is the point: it reproduces what a new user, a new deploy, or a collaborator hits, instead of what works on the machine that grew the app.
+Fresh clone, dependencies installed with lifecycle scripts disabled, production build attempted${runtimeDone ? (runtimeMode === 'ssr' ? ', and the production server started and asked for the homepage in a clean environment with no env vars' : ', and the built app rendered in a clean headless browser with no stored logins or env vars') : ''}. That isolation is the point: it reproduces what a new user, a new deploy, or a collaborator hits, instead of what works on the machine that grew the app.
 
 Automated diagnosis by Vibe Code Rescue. A fix for anything above is usually a small, reviewed change. https://dylancaponi.github.io/vibe-code-rescue/
 `;
