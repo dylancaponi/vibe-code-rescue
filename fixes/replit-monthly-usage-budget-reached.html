@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Replit "monthly usage budget reached" but you have credits left: the fix</title>
+<meta name="description" content="Replit says you've reached your monthly usage budget and Agent is blocked, even with hundreds of dollars in credits. Here is why the budget check trips and the 2 minute fix.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/replit-monthly-usage-budget-reached.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>Replit says "You've reached your monthly usage budget" but you have credits left</h1>
+<p class="lead">You open Replit and Agent refuses to work. The message says: "You've reached your monthly usage budget. Navigate to Account &gt; Billing to increase your budget." But you have an active plan. You have credits, maybe hundreds of dollars of them. Maybe you barely used anything this month. In a real case from September 2026, a Pro user with $299.98 in purchased credits was fully blocked because their monthly budget was set to $0.01. A commenter called it "a common problem", and similar posts show up daily. The fix usually takes two minutes, and it does not put your card at risk. Here is what is going on.</p>
+
+<h2>What the error actually means</h2>
+<p>Your account has a monthly usage budget number. It lives in Account &gt; Billing. The budget check compares your total usage this month against that number. That is the whole test.</p>
+<p>Here is the trap. In practice the check can count all your usage, including usage that your credits already paid for. It is not only counting pay-as-you-go overage on your card. So if your budget is set to a tiny number, like $0.01, you hit it almost instantly. Agent gets blocked. Your credit balance never enters the comparison. That is how someone with $299.98 in credits ends up locked out by a one cent setting.</p>
+<p>The budget number may be tiny because you set it low once to feel safe, or because it defaulted low, or because it got reset. Either way, the budget is the knob that is blocking you. Not your credits. Not your plan.</p>
+
+<h2>The 2 minute fix</h2>
+<p>Raise the budget. Go to Account &gt; Billing, find the monthly usage budget setting, and set it to roughly your remaining credit balance. If you have $300 in credits, a budget around $300 is a sensible number.</p>
+<p>This does not expose your card to a $300 charge. Credits are drawn down before your card is ever charged. The budget is a ceiling on usage, not a spending commitment. Raising it to your credit balance just tells Replit: let me use the credits I already paid for.</p>
+<p>Then verify. Run one small Agent session, something cheap. Open the Usage page and check where that usage came from. It should show the cost drawn from your credit balance, not billed to your card. If credits went down and your card was not touched, you are done. Agent is unblocked and you are spending money you already spent.</p>
+
+<h2>The bug variant: wrong-plan prompts</h2>
+<p>Some people hit a second, weirder layer. Along with the budget message, Replit shows a wrong-plan prompt. For example, it tells you to "Upgrade to Core" while you are already on Pro. If you see that, the system may have your entitlement wrong. It thinks you are on a different plan than the one you pay for.</p>
+<p>That is a Replit-side bug, and no budget setting on your end fixes a wrong entitlement. Do two things:</p>
+<ol>
+  <li><strong>File a support ticket.</strong> State four facts plainly: your plan, your credit balance, your budget setting, and the exact wrong-plan prompt you are seeing. Screenshots of each help. A ticket with those four facts gets resolved much faster than "billing is broken".</li>
+  <li><strong>Post in r/replit and tag ReplitSupport.</strong> The support team is active there, and tagging them reliably gets tickets escalated. Include the same four facts.</li>
+</ol>
+
+<h2>Protect yourself while this gets sorted</h2>
+<ul>
+  <li><strong>Screenshot the Usage page before and after.</strong> Before you raise the budget, and after your test session. If anything gets billed wrong, you have the evidence with timestamps.</li>
+  <li><strong>Know that a wrong card charge is a refund case.</strong> If your card gets charged while you still had credits, that is a concrete, fixable billing error. Refund requests with screenshots resolve much faster than entitlement puzzles. Do not panic; document and ask.</li>
+  <li><strong>Know which knob does what.</strong> Three different things share the word "billing" here, and confusing them is where the fear comes from. Your <strong>subscription renewal</strong> is the flat monthly price of your plan, charged on your renewal date no matter what. <strong>Credit packs</strong> are usage money you bought up front; they get drawn down as you use Agent and other metered features. The <strong>pay-as-you-go budget</strong> is the ceiling on monthly usage, and only usage beyond your credits can ever reach your card. Raising the budget changes the ceiling. It does not change your subscription and it does not charge you anything by itself.</li>
+</ul>
+
+<h2>Do not do this</h2>
+<p>Do not buy more credits to get unblocked. If the budget is the blocker, new credits sit behind the same one cent ceiling and you are out more money with the same locked Agent. And do not delete or recreate your account to reset billing; you would lose your projects to fix a settings number.</p>
+
+<h2>Still stuck?</h2>
+<div class="card">
+<p><strong>Run the instant diagnosis.</strong> Paste your public repo URL into the form and an automated clean-room check reports what is broken: install, build, render, and config, with the exact blocker named, in minutes, free. Budget and plan settings live in your Replit account rather than your code, so if the billing block persists after raising the budget, also paste your plan, credit balance, and budget setting into the issue and I will look at it the same day. Private repo or zip? Email works too.</p>
+<a class="cta" href="https://github.com/dylancaponi/vibe-code-rescue/issues/new?template=diagnose.yml">Get an instant free diagnosis</a>
+<p class="note"><a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis%20(usage%20budget%20blocked)">Or email me instead</a>. Fixes with 24 hour turnaround start at $95.</p>
+</div>
+</main>
+<footer>
+  <div class="inner"><a href="../">Vibe Code Rescue</a>. Broken AI built apps diagnosed free and fixed in 24 hours.</div>
+</footer>
+</body>
+</html>
