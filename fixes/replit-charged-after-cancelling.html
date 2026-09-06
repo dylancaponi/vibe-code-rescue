@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Replit charged you after cancelling: still charging, can't remove your card, locked out after paying</title>
+<meta name="description" content="Replit still charging you after you cancelled? Plan shows Free but the card keeps getting hit, you cannot remove your credit card, or your account stays paused after you paid. Here is where the hidden subscription lives and how to get your app out.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/replit-charged-after-cancelling.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>Replit charged you after cancelling, or your account is paused over billing: the three flavors and the fix</h1>
+<p class="lead">Three versions of the same nightmare are showing up on r/replit right now. One person cancelled months ago, their Billing page literally says FREE, and the monthly charge keeps landing anyway. They cannot remove their credit card either. Another paid $20 after a billing failure, got told the account was active again, and is still locked out. A third had one failed charge pause their account, fixed the payment, and the account stayed paused. Support tickets sit unanswered while a live app is down. Here is what is actually happening in each case, what you can do yourself in the next hour, and how to get your app running somewhere else while the ticket crawls.</p>
+
+<h2>What is actually happening</h2>
+<p>Almost every "Replit is still charging me" case comes down to one of three situations. Figure out which one you are in before you touch anything.</p>
+
+<h3>Flavor 1: charged while your plan shows Free</h3>
+<p>If your Billing page says FREE but money keeps leaving your card, the charge is almost never coming from the plan you are looking at. It is usually a second subscription living somewhere else on the same account. The common culprits: a workspace or org you created (or got added to) that carries its own subscription, or a legacy subscription like an old cycles or Core plan sitting under a different org. Your personal billing page shows Free because your personal plan really is Free. The charge comes from the other one.</p>
+<p>Check replit.com/account#billing first, then check every team or org you belong to. Each one can have its own billing page, and any one of them can be the thing charging your card.</p>
+
+<h3>Flavor 2: you cannot remove your credit card</h3>
+<p>This one feels sinister but it is mechanical. Replit keeps a card on file while any subscription or unpaid balance exists on the account, even a $0 one. So the "remove card" option staying dead is actually a clue: something, somewhere on your account, is still classified as an active subscription or an open balance. You cannot fix this by attacking the card. Find the hidden subscription (see flavor 1), cancel it, and the card becomes removable.</p>
+
+<h3>Flavor 3: you paid, and you are still locked out</h3>
+<p>A failed charge pauses the account. You fix the payment, the invoice shows paid, and the account stays paused anyway. Reactivation is not instant, and in some cases it needs someone on the support side to flip the switch. A paid invoice next to a still-paused account is not just frustrating, it is the exact evidence you want. It proves you held up your end and the lock is on their side.</p>
+
+<h2>Do this yourself first (before support ever answers)</h2>
+<ol>
+  <li><strong>Audit every org and team you belong to.</strong> Open your personal billing page at replit.com/account#billing, then visit each team or org and look for its billing or subscription page. You are hunting for any subscription that is not the Free one you already know about. This finds the hidden charger in most flavor 1 and flavor 2 cases.</li>
+  <li><strong>Download your invoices.</strong> Invoices name which subscription generated the charge. That single line answers "what is Replit actually billing me for" better than any support reply. Grab every invoice from the months you were charged.</li>
+  <li><strong>Cancel from the subscription page, not just "downgrade".</strong> When you find the live subscription, look for an explicit cancel option on that subscription. Downgrading your visible plan while another subscription keeps running is exactly how people end up "on Free" and still paying.</li>
+  <li><strong>Screenshot everything.</strong> The FREE plan page, each org billing page, each invoice, the cancel confirmation, and the date on your screen. If this ends in a refund request or a card dispute, timestamps win arguments.</li>
+</ol>
+
+<h2>Escalating to support so it actually moves</h2>
+<p>File one ticket and make it dense with facts, not feelings. Include: the invoice IDs of the charges, a screenshot of your billing page showing FREE (or the paid invoice next to the paused account, if you are flavor 3), the date you cancelled, and one sentence asking for the specific action: refund the post-cancellation charges, remove the card, or unlock the paid account. A ticket that contradicts itself in Replit's own records ("your invoice charged me on this date, your billing page says Free") is much harder to leave in the queue than "I keep getting charged, please help".</p>
+<p>Posting in r/replit and tagging ReplitSupport also works. The team is active there and public threads with invoice IDs get picked up.</p>
+
+<h2>If charges continue after a documented cancellation: the chargeback option</h2>
+<p>If you cancelled, you have the screenshots and invoices to prove it, and charges keep landing anyway, a card-issuer dispute is legitimate for the charges dated after your cancellation. Your bank will ask for exactly the evidence you collected above. Dispute only the post-cancellation charges, not the months you were genuinely subscribed.</p>
+<p>One serious warning first: a chargeback usually gets the Replit account banned. Do not dispute anything until your code and data are out. Download the zip of every Repl you care about, and if you have databases, export them (for Postgres, a pg_dump of each database). Once you have local copies of everything, the account is no longer a hostage and the dispute is a clean business decision.</p>
+
+<h2>Your app does not have to stay down while this drags on</h2>
+<p>A billing lock on your Replit account and your app being offline are two separate problems, and you only have to accept the first one. If the app matters, get it out and running elsewhere today:</p>
+<ol>
+  <li><strong>Export the code.</strong> Download the zip of the Repl (or push it to GitHub if that still works for you).</li>
+  <li><strong>Export the data.</strong> pg_dump your database, or copy out whatever storage the app uses.</li>
+  <li><strong>Deploy the frontend and server on Vercel or Netlify.</strong> Most vibe-coded apps move over with minimal changes.</li>
+  <li><strong>Stand up your own database on Neon</strong> (free tier is fine to start), restore your dump into it, and point DATABASE_URL at the new database.</li>
+</ol>
+<p>Now the support ticket can take two weeks and your users never notice. If your app broke on its own around the same time and you are not sure billing is even the cause, start with <a href="site-worked-yesterday-now-broken.html">app worked yesterday, now broken with no changes on your side</a>. And if your block is the usage budget message rather than a paused account, that is a different (and faster) fix: <a href="replit-monthly-usage-budget-reached.html">Replit "monthly usage budget reached" while you still have credits</a>.</p>
+
+<h2>Do not do this</h2>
+<p>Do not pay again "to see if it unlocks this time". Flavor 3 shows that a successful payment and an unlocked account are not the same event, and now you have two charges to argue about instead of one. Do not delete the account to stop the charges before exporting your code; you would trade a billing problem for a lost-app problem. And do not fire off a chargeback in anger while your only copy of the code still lives inside the account.</p>
+
+<h2>Still stuck?</h2>
+<div class="card">
+<p><strong>Run the instant diagnosis.</strong> Paste your public repo URL into the form and an automated clean-room check reports what is broken: install, build, render, and config, with the exact blocker named, in minutes, free. Billing locks live in your Replit account rather than your code, but if you are mid-escape (zip in hand, app not yet running on Vercel or Netlify), paste the repo and I will name what is blocking the redeploy the same day. Private repo or zip? Email works too.</p>
+<a class="cta" href="https://github.com/dylancaponi/vibe-code-rescue/issues/new?template=diagnose.yml">Get an instant free diagnosis</a>
+<p class="note"><a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis%20(billing%20lockout)">Or email me instead</a>. Fixes with 24 hour turnaround start at $95.</p>
+</div>
+</main>
+<footer>
+  <div class="inner"><a href="../">Vibe Code Rescue</a>. Broken AI built apps diagnosed free and fixed in 24 hours.</div>
+</footer>
+</body>
+</html>
