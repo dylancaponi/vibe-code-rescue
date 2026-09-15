@@ -30,9 +30,54 @@ const outIdx = argv.indexOf('--out');
 const outPath = outIdx >= 0 ? argv[outIdx + 1] : null;
 const checkData = argv.includes('--check-data');
 const asJson = argv.includes('--json');
+// Bundled libraries ship their own local-dev defaults that are dead code in
+// production. supabase-js in particular carries http://localhost:9999 as its
+// GoTrue fallback, so a naive localhost check fires on essentially every
+// Supabase app we scan. Flagging that would make the free scan cry wolf on our
+// most common target, so a match is only real if it is not a known vendor
+// default sitting next to that library's own markers.
+const VENDOR_LOCALHOST = [
+  { match: /(?:localhost|127\.0\.0\.1):9999/, near: /supabase\.auth\.token|GOTRUE|X-Client-Info|gotrue/i },
+  { match: /(?:localhost|127\.0\.0\.1):\d{2,5}/, near: /lovable\.dev|gptengineer\.app|bolt\.new|replit\.dev/i },
+];
+
+// A localhost URL written inside a regular expression is an allowlist being
+// tested against, not an address the app calls. Builder platforms inject these
+// to recognise their own preview origins. Escaped slashes are the giveaway,
+// since a plain string URL in minified code never carries them.
+const insideRegexLiteral = (snippet) => /\\\//.test(snippet);
+
+const isVendorDefault = (hit) =>
+  insideRegexLiteral(hit.snippet) ||
+  VENDOR_LOCALHOST.some(v => v.match.test(hit.match) && v.near.test(hit.snippet));
+
+// The suppression rules above decide whether a real finding is shown or hidden,
+// and they are the difference between a report people trust and one that cries
+// wolf on every Supabase or Lovable app. `--self-test` exercises them with no
+// network so a regression shows up before a scan goes to a customer.
+const SELF_TEST_CASES = [
+  ['supabase-js 9999 fallback is suppressed', { match: 'http://localhost:9999', snippet: 'af=`http://localhost:9999`,of=`supabase.auth.token`,sf={"X-Client' }, true],
+  ['a builder origin allowlist regex is suppressed', { match: 'http://localhost:3000', snippet: String.raw`\/([a-z0-9-]+\.)*(lovable\.dev|gptengineer\.app)$|^http:\/\/localhost:3000$/` }, true],
+  ['a builder preview origin list is suppressed', { match: 'http://localhost:5173', snippet: 'origins=["https://x.lovable.dev","http://localhost:5173"]' }, true],
+  ['a hardcoded API base is kept', { match: 'http://localhost:3000', snippet: 'const API_BASE="http://localhost:3000/api";fetch(API_BASE)' }, false],
+  ['a hardcoded socket endpoint is kept', { match: 'http://localhost:8080', snippet: 'io("http://localhost:8080",{transports:["websocket"]})' }, false],
+  ['a shipped local Supabase stack is kept, it is a real bug', { match: 'http://localhost:54321', snippet: 'createClient("http://localhost:54321",anonKey)' }, false],
+  ['port 9999 without the gotrue markers is kept', { match: 'http://localhost:9999', snippet: 'const wsUrl="http://localhost:9999/socket";connect(wsUrl)' }, false],
+];
+if (argv.includes('--self-test')) {
+  let failed = 0;
+  for (const [name, hit, want] of SELF_TEST_CASES) {
+    const got = isVendorDefault(hit);
+    if (got === want) console.log(`pass  ${name}`);
+    else { failed++; console.log(`FAIL  ${name} (got ${got}, want ${want})`); }
+  }
+  console.log(failed ? `${failed} failing` : `${SELF_TEST_CASES.length} passing`);
+  process.exit(failed ? 1 : 0);
+}
+
 const raw = argv.filter((a, i) => !a.startsWith('--') && (outIdx < 0 || i !== outIdx + 1))[0];
 if (!raw) {
-  console.error('usage: scan-url.mjs <url> [--out report.md] [--check-data] [--json]');
+  console.error('usage: scan-url.mjs <url> [--out report.md] [--check-data] [--json] | --self-test');
   process.exit(2);
 }
 
@@ -291,18 +336,6 @@ function evidenceAll(re, limit = 20) {
   return out;
 }
 
-// Bundled libraries ship their own local-dev defaults that are dead code in
-// production. supabase-js in particular carries http://localhost:9999 as its
-// GoTrue fallback, so a naive localhost check fires on essentially every
-// Supabase app we scan. Flagging that would make the free scan cry wolf on our
-// most common target, so a match is only real if it is not a known vendor
-// default sitting next to that library's own markers.
-const VENDOR_LOCALHOST = [
-  { match: /(?:localhost|127\.0\.0\.1):9999/, near: /supabase\.auth\.token|GOTRUE|X-Client-Info|gotrue/i },
-  { match: /(?:localhost|127\.0\.0\.1):54321/, near: /supabase/i },
-];
-const isVendorDefault = (hit) =>
-  VENDOR_LOCALHOST.some(v => v.match.test(hit.match) && v.near.test(hit.snippet));
 
 // Secrets that must never reach a browser. The anon/publishable ones are fine by
 // design and are deliberately not flagged.
