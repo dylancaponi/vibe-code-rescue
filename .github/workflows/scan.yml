@@ -1,0 +1,88 @@
+name: scan
+on:
+  issues:
+    types: [opened]
+  repository_dispatch:
+    types: [scan-request]
+
+permissions:
+  issues: write
+  contents: read
+
+concurrency:
+  group: scan-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    if: github.event_name == 'repository_dispatch' || contains(github.event.issue.labels.*.name, 'scan')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Untrusted input (issue body) is only ever read from an env var, never
+      # interpolated into shell. The scanner itself re-validates the URL and
+      # refuses private or local addresses, so a metadata-endpoint URL cannot
+      # make this runner fetch its own credentials.
+      - name: Extract target URL
+        id: target
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          DISPATCH_URL: ${{ github.event.client_payload.url }}
+        run: |
+          node -e '
+            const body = process.env.DISPATCH_URL || process.env.ISSUE_BODY || "";
+            const m = body.match(/https?:\/\/[A-Za-z0-9._-]+\.[A-Za-z]{2,}[^\s)\]<>"]*/);
+            let out = "";
+            if (m) {
+              try {
+                const u = new URL(m[0]);
+                const h = u.hostname;
+                const priv = /^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.|\[?::1)/i.test(h)
+                  || /^172\.(1[6-9]|2\d|3[01])\./.test(h)
+                  || /\.(local|internal|localhost)$/i.test(h)
+                  || /github\.com$/i.test(h);
+                if (!priv) out = u.href;
+              } catch {}
+            }
+            console.log(`target=${out}`);
+          ' >> "$GITHUB_OUTPUT"
+
+      - name: Reply if no usable URL found
+        if: steps.target.outputs.target == '' && github.event_name == 'issues'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment "${{ github.event.issue.number }}" --repo "${{ github.repository }}" --body \
+            "I could not find a public app URL in your issue. Please edit it (or open a new one) with the full link people visit, like https://your-app.lovable.app. Local addresses cannot be scanned from here."
+
+      - name: Run scan
+        if: steps.target.outputs.target != ''
+        continue-on-error: true
+        env:
+          TARGET_URL: ${{ steps.target.outputs.target }}
+          CHROME_PATH: /usr/bin/google-chrome
+          CHROME_EXTRA_FLAGS: "--no-sandbox --disable-dev-shm-usage"
+        run: node scripts/scan-url.mjs "$TARGET_URL" --out report.md
+
+      - name: Post report
+        if: steps.target.outputs.target != '' && github.event_name == 'issues'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_URL: ${{ steps.target.outputs.target }}
+        run: |
+          if [ -f report.md ]; then
+            gh issue comment "${{ github.event.issue.number }}" --repo "${{ github.repository }}" --body-file report.md
+            gh issue close "${{ github.event.issue.number }}" --repo "${{ github.repository }}" --comment \
+              "Scan complete, report above. Want the ranked fix plan written out and emailed to you? That is the \$39 diagnosis: https://buy.stripe.com/8x2eVc8qA58zdkFcOn7Zu00"
+          else
+            gh issue comment "${{ github.event.issue.number }}" --repo "${{ github.repository }}" --body \
+              "The scan could not complete against $TARGET_URL (most often: the site is down, behind a login wall, or blocking automated visitors). A human will take a look; you can also email dylan.caponi@gmail.com."
+          fi

@@ -1,0 +1,37 @@
+name: Free instant scan of your live app
+description: Paste the link to your deployed app and get an automated report as a comment, usually within a couple of minutes. No GitHub repo needed.
+title: "Scan my app"
+labels: ["scan"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        No repo needed. If your Lovable, Bolt, v0, or Replit app is deployed somewhere, paste the link.
+        A bot opens it in a clean browser, reads what the page reports, and posts a plain English report here:
+        whether it renders, what the console says, which requests fail, whether any key leaked into the JavaScript,
+        and whether refreshing on a route 404s.
+
+        It is read-only. Nothing is written, no login is attempted, and no user records are read.
+        Only submit an app you own or were asked to check. This issue and the report are public.
+  - type: input
+    id: app_url
+    attributes:
+      label: Your app's URL
+      description: The live link people actually visit (for example https://your-app.lovable.app)
+      placeholder: https://your-app.lovable.app
+    validations:
+      required: true
+  - type: textarea
+    id: symptom
+    attributes:
+      label: What is going wrong? (optional)
+      description: One or two sentences. Blank screen, login loops, data not showing, a button that does nothing, anything.
+    validations:
+      required: false
+  - type: checkboxes
+    id: consent
+    attributes:
+      label: Confirm
+      options:
+        - label: This app is mine, or the owner asked me to have it checked.
+          required: true
