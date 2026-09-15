@@ -271,20 +271,38 @@ const sawBundles = bundleText.length > 0;
 // evidence instead of asserting. Long token-ish runs are redacted so quoting a
 // bundle back at its owner can never republish a secret that happens to sit
 // next to the match.
-function evidence(re) {
+function evidenceAll(re, limit = 20) {
+  const out = [];
+  const g = new RegExp(re.source, re.flags.includes('g') ? re.flags : `${re.flags}g`);
   for (const b of bundles) {
-    const m = b.body.match(re);
-    if (!m) continue;
-    const at = m.index ?? 0;
-    const raw = b.body.slice(Math.max(0, at - 40), at + m[0].length + 40);
-    const snippet = raw
-      .replace(/\s+/g, ' ')
-      .replace(/[A-Za-z0-9_-]{28,}/g, '[redacted]')
-      .trim();
-    return { file: b.url.split('/').pop() || b.url, snippet };
+    g.lastIndex = 0;
+    let m;
+    while ((m = g.exec(b.body)) && out.length < limit) {
+      const at = m.index;
+      const snippet = b.body
+        .slice(Math.max(0, at - 60), at + m[0].length + 60)
+        .replace(/\s+/g, ' ')
+        .replace(/[A-Za-z0-9_-]{28,}/g, '[redacted]')
+        .trim();
+      out.push({ file: b.url.split('/').pop() || b.url, match: m[0], snippet });
+      if (m[0].length === 0) g.lastIndex++;
+    }
   }
-  return null;
+  return out;
 }
+
+// Bundled libraries ship their own local-dev defaults that are dead code in
+// production. supabase-js in particular carries http://localhost:9999 as its
+// GoTrue fallback, so a naive localhost check fires on essentially every
+// Supabase app we scan. Flagging that would make the free scan cry wolf on our
+// most common target, so a match is only real if it is not a known vendor
+// default sitting next to that library's own markers.
+const VENDOR_LOCALHOST = [
+  { match: /(?:localhost|127\.0\.0\.1):9999/, near: /supabase\.auth\.token|GOTRUE|X-Client-Info|gotrue/i },
+  { match: /(?:localhost|127\.0\.0\.1):54321/, near: /supabase/i },
+];
+const isVendorDefault = (hit) =>
+  VENDOR_LOCALHOST.some(v => v.match.test(hit.match) && v.near.test(hit.snippet));
 
 // Secrets that must never reach a browser. The anon/publishable ones are fine by
 // design and are deliberately not flagged.
@@ -303,10 +321,10 @@ if (sawBundles) {
   const sbUrl = bundleText.match(/https:\/\/[a-z0-9]{8,}\.supabase\.co/i);
   if (sbUrl) f('info', 'data', 'This app talks to Supabase from the browser', `The front end calls ${sbUrl[0]} directly with its public anon key, which is the normal Supabase design. It only holds if row level security is switched on for every table, because the anon key is visible to everyone who opens the page.${checkData ? ' The data check below covers that.' : ' Open your Supabase dashboard and confirm RLS is enabled on every table.'}`);
   const lhRe = /(?:https?:\/\/)?(?:localhost|127\.0\.0\.1):\d{2,5}/;
-  if (lhRe.test(bundleText) && isHttps) {
-    const ev = evidence(lhRe);
-    const where = ev ? ` It is in \`${ev.file}\`, here: \`${short(ev.snippet, 140)}\`.` : '';
-    f('warn', 'config', 'The deployed code still points at localhost somewhere', `A production bundle referencing localhost is the usual cause of "login works on my machine but loops forever on the live site".${where} The fix is almost always the Site URL and Redirect URLs in your auth provider settings, plus any hardcoded API base URL. If that snippet is inside a library you did not write, it is dev-only dead code and you can ignore it.`);
+  const lhHits = isHttps ? evidenceAll(lhRe).filter(h => !isVendorDefault(h)) : [];
+  if (lhHits.length) {
+    const ev = lhHits[0];
+    f('warn', 'config', 'The deployed code still points at localhost somewhere', `A production bundle referencing localhost is the usual cause of "login works on my machine but loops forever on the live site". It is in \`${ev.file}\`, here: \`${short(ev.snippet, 160)}\`. The fix is almost always the Site URL and Redirect URLs in your auth provider settings, plus any hardcoded API base URL.`);
   }
 }
 
