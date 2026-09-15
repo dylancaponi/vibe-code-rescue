@@ -72,6 +72,17 @@ jobs:
           CHROME_EXTRA_FLAGS: "--no-sandbox --disable-dev-shm-usage"
         run: node scripts/scan-url.mjs "$TARGET_URL" --out report.md
 
+      # repository_dispatch runs post nothing publicly, so keep the report
+      # retrievable for paid fulfillment and for scans run on someone's behalf.
+      - name: Upload report
+        if: steps.target.outputs.target != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-report
+          path: report.md
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Post report
         if: steps.target.outputs.target != '' && github.event_name == 'issues'
         env:
