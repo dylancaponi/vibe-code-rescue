@@ -257,11 +257,34 @@ if (!bl.launched) {
 console.error('[3/5] reading the scripts the page ships');
 const scriptUrls = [...new Set(bl.scripts)].filter(u => u.startsWith(finalOrigin)).slice(0, 8);
 let bundleText = '';
+const bundles = [];
 for (const u of scriptUrls) {
   const r = await get(u, { timeoutMs: 20000 });
-  if (r.ok && r.status === 200) bundleText += `\n${r.body}`;
+  if (r.ok && r.status === 200) {
+    bundles.push({ url: u, body: r.body });
+    bundleText += `\n${r.body}`;
+  }
 }
 const sawBundles = bundleText.length > 0;
+
+// Pull the surrounding snippet for a bundle match so a finding can show its own
+// evidence instead of asserting. Long token-ish runs are redacted so quoting a
+// bundle back at its owner can never republish a secret that happens to sit
+// next to the match.
+function evidence(re) {
+  for (const b of bundles) {
+    const m = b.body.match(re);
+    if (!m) continue;
+    const at = m.index ?? 0;
+    const raw = b.body.slice(Math.max(0, at - 40), at + m[0].length + 40);
+    const snippet = raw
+      .replace(/\s+/g, ' ')
+      .replace(/[A-Za-z0-9_-]{28,}/g, '[redacted]')
+      .trim();
+    return { file: b.url.split('/').pop() || b.url, snippet };
+  }
+  return null;
+}
 
 // Secrets that must never reach a browser. The anon/publishable ones are fine by
 // design and are deliberately not flagged.
@@ -278,9 +301,12 @@ if (sawBundles) {
     if (re.test(bundleText)) f('blocker', 'secrets', `The JavaScript sent to every visitor contains ${what}`, why);
   }
   const sbUrl = bundleText.match(/https:\/\/[a-z0-9]{8,}\.supabase\.co/i);
-  if (sbUrl) f('info', 'data', 'This app talks to Supabase from the browser', `The front end calls ${sbUrl[0]} directly with its public anon key, which is the normal Supabase design. It only holds if row level security is switched on for every table, because the anon key is visible to everyone who opens the page. The data check below covers that.`);
-  if (/localhost:|127\.0\.0\.1:/.test(bundleText) && isHttps) {
-    f('warn', 'config', 'The deployed code still points at localhost somewhere', 'A production bundle referencing localhost is the usual cause of "login works on my machine but loops forever on the live site". The fix is almost always the Site URL and Redirect URLs in your auth provider settings, plus any hardcoded API base URL.');
+  if (sbUrl) f('info', 'data', 'This app talks to Supabase from the browser', `The front end calls ${sbUrl[0]} directly with its public anon key, which is the normal Supabase design. It only holds if row level security is switched on for every table, because the anon key is visible to everyone who opens the page.${checkData ? ' The data check below covers that.' : ' Open your Supabase dashboard and confirm RLS is enabled on every table.'}`);
+  const lhRe = /(?:https?:\/\/)?(?:localhost|127\.0\.0\.1):\d{2,5}/;
+  if (lhRe.test(bundleText) && isHttps) {
+    const ev = evidence(lhRe);
+    const where = ev ? ` It is in \`${ev.file}\`, here: \`${short(ev.snippet, 140)}\`.` : '';
+    f('warn', 'config', 'The deployed code still points at localhost somewhere', `A production bundle referencing localhost is the usual cause of "login works on my machine but loops forever on the live site".${where} The fix is almost always the Site URL and Redirect URLs in your auth provider settings, plus any hardcoded API base URL. If that snippet is inside a library you did not write, it is dev-only dead code and you can ignore it.`);
   }
 }
 
