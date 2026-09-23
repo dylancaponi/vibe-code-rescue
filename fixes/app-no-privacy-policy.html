@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your AI built app collects emails but has no privacy policy: why that is a legal problem and the one hour fix</title>
+<meta name="description" content="Your Lovable, Bolt, or Replit app has a signup form, an email capture box, or a login, and no privacy policy anywhere. California law flatly requires one, demand letter firms check for it first, and fixing it takes about an hour. Here is how.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/app-no-privacy-policy.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>Your app collects emails and has no privacy policy</h1>
+<p class="lead">You built an app with Lovable, Bolt, v0, or Replit. It has a signup form, or an email capture box, or a login backed by Supabase or Firebase. There is no privacy policy link anywhere on the page, because you never asked the AI for one and it never volunteered. That combination is not a style problem. It is the first thing automated demand letter operations check for, because it is provable from a single screenshot.</p>
+
+<h2>Why this matters more than it feels like it should</h2>
+<p>California's CalOPPA requires any site or app that collects personal information from California residents to conspicuously post a privacy policy. An email address is personal information. "Conspicuously" means a visible link, usually in the footer. There is no small-site exception and no revenue threshold: a weekend project with an email box is covered the moment one Californian types their address into it. CCPA and GDPR add notice duties on top for larger operations, but CalOPPA is the one that applies to almost everyone and is the easiest to prove a violation of, which is exactly why low effort legal demand letters lead with it.</p>
+<p>Separate from the law: Stripe, ad networks, and app stores all require a posted privacy policy, so the missing page will eventually block something you want to do anyway.</p>
+
+<h2>Confirm it in two minutes</h2>
+<ol>
+  <li>Open your deployed app the way a stranger would. Does any page collect anything: email box, signup, contact form, chat widget, analytics?</li>
+  <li>Look for a Privacy Policy link on the page that collects it, and in the footer. Not in your repo, on the rendered page. If a visitor cannot find it, it does not count.</li>
+  <li>While you are there, check for a Terms of Service link too. Terms are not legally required the way the privacy policy is, but without them you have no liability cap, no governing law, and no stated right to close abusive accounts.</li>
+</ol>
+
+<h2>The fix, about an hour</h2>
+<ol>
+  <li><strong>Write down what you actually collect.</strong> Email addresses, names, analytics events, chat transcripts, payment data (Stripe collects card numbers for you, but you still receive names and emails), and anything your database stores per user. Also list the third parties the data flows through: Supabase or Firebase, Stripe, any analytics or pixel, any AI API you send user text to.</li>
+  <li><strong>Generate an honest policy from that list.</strong> A generator or an AI prompt is fine as a starting point. What makes it defensible is that it matches reality: every collection point and third party from step 1 appears in it, and nothing in it claims practices you do not follow. A copied policy that mentions practices you do not have is worse than a short accurate one.</li>
+  <li><strong>Include the required pieces:</strong> what you collect, what you use it for, who you share it with (name the actual services), how a user can ask you to delete their data, an effective date, and a contact email that works.</li>
+  <li><strong>Post it conspicuously.</strong> A <code>/privacy</code> page linked from the footer of every page and next to any signup button. Tell your AI builder: "Add a privacy policy page at /privacy with this text, and link it in the footer site-wide and under the signup form." That is a five minute change.</li>
+  <li><strong>Add terms while you are at it.</strong> Same pattern, <code>/terms</code>, footer link. For a small app the important parts are: the service is provided as-is, a liability cap, your right to terminate accounts, and governing law.</li>
+</ol>
+
+<h2>Do not do this</h2>
+<p>Do not paste a policy that names another company, promises a Data Protection Officer you do not have, or claims certifications you never got. Demand letters quote your own policy back at you, and a policy you do not follow converts a paperwork gap into a deceptive practices claim, which is worse. Short and true beats long and copied.</p>
+
+<h2>Related exposure the same audience ships</h2>
+<p>If the AI built your page with a Meta pixel, TikTok pixel, or a session recording tool (Hotjar, Clarity) firing before any cookie consent, that is its own demand letter category in California, with $5,000 statutory damages per violation cited in the letters. And if most of your images have no alt text, ADA accessibility suits target exactly that. Both are visible from the outside in seconds, which is how the letter mills find them.</p>
+
+<h2>Not sure what your app is exposing?</h2>
+<div class="card">
+<p><strong>Run the free scan.</strong> Paste your deployed link and a clean browser opens your app the way a stranger would and reports back in plain English: broken pages, leaked keys, open database tables, and the legal exposure basics on this page, including whether trackers fire without consent and whether your privacy policy is actually visible. Read-only, nothing written, free.</p>
+<a class="cta" href="https://github.com/dylancaponi/vibe-code-rescue/issues/new?template=scan.yml">Scan my live app, free</a>
+<p class="note"><a href="mailto:dylan.caponi@gmail.com?subject=Free%20app%20scan%20(privacy%20policy)">Or email me the link instead</a>. Want the full ranked report and fix plan written by a person? The <a href="https://buy.stripe.com/8x2eVc8qA58zdkFcOn7Zu00" rel="nofollow">paid diagnosis is $39</a>. This page is general information, not legal advice; for actual legal questions about your situation, ask a lawyer.</p>
+</div>
+</main>
+<footer class="site">
+  <div class="inner">Vibe Code Rescue. Broken AI built apps diagnosed free and fixed in 24 hours. <a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis">dylan.caponi@gmail.com</a></div>
+</footer>
+</body>
+</html>
