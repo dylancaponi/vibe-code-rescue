@@ -51,6 +51,44 @@ const isVendorDefault = (hit) =>
   insideRegexLiteral(hit.snippet) ||
   VENDOR_LOCALHOST.some(v => v.match.test(hit.match) && v.near.test(hit.snippet));
 
+// ---- legal-exposure signals ----------------------------------------------------
+// The demand-letter mills that target small web apps are not hypothetical: CIPA
+// "wiretap" claims over session-recording and ad pixels, CalOPPA/CCPA letters
+// over missing privacy policies, and ADA suits over inaccessible pages are all
+// filed by volume against exactly the audience this scanner serves. These checks
+// only report what the page itself shows a visitor; nothing here is legal advice
+// and the report says so.
+const TRACKER_PATTERNS = [
+  // heavy = the ones that show up in wiretap/session-recording demand letters
+  { name: 'Meta (Facebook) pixel', re: /connect\.facebook\.net|fbevents\.js|facebook\.com\/tr\b/i, heavy: true },
+  { name: 'TikTok pixel', re: /analytics\.tiktok\.com/i, heavy: true },
+  { name: 'LinkedIn Insight tag', re: /snap\.licdn\.com/i, heavy: true },
+  { name: 'Snap pixel', re: /sc-static\.net\/scevent/i, heavy: true },
+  { name: 'Hotjar session recording', re: /static\.hotjar\.com|\bhj\(["']/i, heavy: true },
+  { name: 'Microsoft Clarity session recording', re: /clarity\.ms\/tag|\bclarity\(["']/i, heavy: true },
+  { name: 'FullStory session recording', re: /fullstory\.com\/s\/fs\.js/i, heavy: true },
+  { name: 'Google Analytics / Tag Manager', re: /googletagmanager\.com|google-analytics\.com/i, heavy: false },
+];
+const detectTrackers = (urls, bundle) =>
+  TRACKER_PATTERNS.filter(t => urls.some(u => t.re.test(u)) || t.re.test(bundle));
+
+// Consent tooling leaves recognisable markers in the DOM. Text matching is the
+// fallback for hand-rolled banners.
+const CONSENT_DOM_MARKERS = /onetrust|cookiebot|cookieyes|osano|termly|iubenda|usercentrics|didomi|quantcast.*choice|cookieconsent|cky-consent|cc-window|cc-banner|truste|ketch-|klaro/i;
+const CONSENT_TEXT = /(accept|allow|agree to|manage|decline)[^.!?]{0,40}cookies|cookie (settings|preferences|consent|policy)|we use cookies/i;
+const hasConsentUi = (html, text) => CONSENT_DOM_MARKERS.test(html || '') || CONSENT_TEXT.test(text || '');
+
+const CHAT_WIDGETS = [
+  ['Intercom', /widget\.intercom\.io|intercomSettings/i],
+  ['Crisp', /client\.crisp\.chat/i],
+  ['Tawk.to', /embed\.tawk\.to/i],
+  ['Drift', /js\.driftt\.com/i],
+  ['Tidio', /code\.tidio\.co/i],
+  ['Chatbase', /chatbase\.co\/embed/i],
+  ['Botpress', /cdn\.botpress\.cloud/i],
+  ['Voiceflow', /cdn\.voiceflow\.com/i],
+];
+
 // The suppression rules above decide whether a real finding is shown or hidden,
 // and they are the difference between a report people trust and one that cries
 // wolf on every Supabase or Lovable app. `--self-test` exercises them with no
@@ -64,6 +102,15 @@ const SELF_TEST_CASES = [
   ['a shipped local Supabase stack is kept, it is a real bug', { match: 'http://localhost:54321', snippet: 'createClient("http://localhost:54321",anonKey)' }, false],
   ['port 9999 without the gotrue markers is kept', { match: 'http://localhost:9999', snippet: 'const wsUrl="http://localhost:9999/socket";connect(wsUrl)' }, false],
 ];
+const LEGAL_TEST_CASES = [
+  ['meta pixel script url is detected', () => detectTrackers(['https://connect.facebook.net/en_US/fbevents.js'], '').some(t => t.heavy)],
+  ['clarity tag in bundle is detected', () => detectTrackers([], 'src="https://www.clarity.ms/tag/abc123"').some(t => t.heavy)],
+  ['google analytics is detected but not heavy', () => { const t = detectTrackers(['https://www.googletagmanager.com/gtag/js?id=G-X'], ''); return t.length === 1 && !t[0].heavy; }],
+  ['a plain supabase app has no trackers', () => detectTrackers(['https://x.supabase.co/rest/v1/'], 'createClient("https://x.supabase.co",key)').length === 0],
+  ['cookiebot markers count as consent ui', () => hasConsentUi('<script id="Cookiebot" src="https://consent.cookiebot.com/uc.js">', '')],
+  ['hand-rolled banner text counts as consent ui', () => hasConsentUi('', 'We use cookies to improve your experience. Accept all cookies?')],
+  ['a page that merely mentions baking cookies is not consent ui', () => !hasConsentUi('<div>recipes</div>', 'Grandma\'s best chocolate chip cookies, baked fresh.')],
+];
 if (argv.includes('--self-test')) {
   let failed = 0;
   for (const [name, hit, want] of SELF_TEST_CASES) {
@@ -71,7 +118,12 @@ if (argv.includes('--self-test')) {
     if (got === want) console.log(`pass  ${name}`);
     else { failed++; console.log(`FAIL  ${name} (got ${got}, want ${want})`); }
   }
-  console.log(failed ? `${failed} failing` : `${SELF_TEST_CASES.length} passing`);
+  for (const [name, fn] of LEGAL_TEST_CASES) {
+    if (fn()) console.log(`pass  ${name}`);
+    else { failed++; console.log(`FAIL  ${name}`); }
+  }
+  const total = SELF_TEST_CASES.length + LEGAL_TEST_CASES.length;
+  console.log(failed ? `${failed} failing` : `${total} passing`);
   process.exit(failed ? 1 : 0);
 }
 
@@ -172,6 +224,8 @@ async function browserLoad(url) {
   const result = {
     launched: false, consoleErrors: [], exceptions: [], failed: [], httpErrors: [],
     domlen: 0, rootlen: -1, bodyText: 0, title: '', scripts: [], finalUrl: url,
+    imgTotal: 0, imgNoAlt: 0, hasPasswordField: false, hasEmailField: false,
+    links: [], domSample: '', textSample: '',
   };
 
   try {
@@ -252,6 +306,13 @@ async function browserLoad(url) {
     result.bodyText = (await ev('(document.body&&document.body.innerText||"").trim().length')) || 0;
     result.title = (await ev('document.title')) || '';
     result.finalUrl = (await ev('location.href')) || url;
+    result.imgTotal = (await ev('document.querySelectorAll("img").length')) || 0;
+    result.imgNoAlt = (await ev('[...document.querySelectorAll("img")].filter(i=>!(i.getAttribute("alt")||"").trim()).length')) || 0;
+    result.hasPasswordField = !!(await ev('!!document.querySelector("input[type=password]")'));
+    result.hasEmailField = !!(await ev('!!document.querySelector("input[type=email],input[name*=email i],input[placeholder*=email i]")'));
+    result.links = (await ev('[...document.querySelectorAll("a")].slice(0,400).map(a=>(a.getAttribute("href")||"")+" | "+a.textContent.trim().slice(0,80))')) || [];
+    result.domSample = (await ev('document.documentElement.outerHTML.slice(0,300000)')) || '';
+    result.textSample = (await ev('(document.body&&document.body.innerText||"").slice(0,30000)')) || '';
 
     ws.close();
   } catch { /* fall through with whatever was collected */ } finally {
@@ -261,7 +322,7 @@ async function browserLoad(url) {
 }
 
 // ---- run ----------------------------------------------------------------------
-console.error(`[1/5] fetching ${target.href}`);
+console.error(`[1/6] fetching ${target.href}`);
 const home = await get(target.href);
 if (!home.ok) {
   f('blocker', 'reachability', 'The site did not respond', `Nothing answered at ${target.href}. The error was: ${home.error}. Either the deploy is down, the domain does not resolve, or the certificate is rejected. Every visitor sees this.`);
@@ -275,7 +336,7 @@ const finalOrigin = home.ok ? new URL(home.url).origin : target.origin;
 const isHttps = finalOrigin.startsWith('https:');
 if (!isHttps) f('warn', 'transport', 'The site is served over plain HTTP', 'Traffic is unencrypted, so passwords and session cookies travel in the clear and browsers will mark the site as not secure. Most hosts give HTTPS for free; turn it on and redirect HTTP to it.');
 
-console.error('[2/5] loading in a real browser');
+console.error('[2/6] loading in a real browser');
 const bl = await browserLoad(home.ok ? home.url : target.href);
 if (!bl.launched) {
   f('info', 'runtime', 'Browser check could not run on this machine', 'Headless Chrome did not start, so the render and console checks were skipped. The rest of the report is unaffected.');
@@ -299,7 +360,7 @@ if (!bl.launched) {
   }
 }
 
-console.error('[3/5] reading the scripts the page ships');
+console.error('[3/6] reading the scripts the page ships');
 const scriptUrls = [...new Set(bl.scripts)].filter(u => u.startsWith(finalOrigin)).slice(0, 8);
 let bundleText = '';
 const bundles = [];
@@ -371,7 +432,7 @@ if (mapRef && scriptUrls.length) {
   }
 }
 
-console.error('[4/5] checking well-known paths and headers');
+console.error('[4/6] checking well-known paths and headers');
 // Confirm by content, never by status: a catch-all route returns 200 for everything.
 const envProbe = await get(new URL('/.env', finalOrigin).href, { timeoutMs: 10000 });
 if (envProbe.ok && envProbe.status === 200 && /^\s*[A-Z][A-Z0-9_]{2,}\s*=/m.test(envProbe.body) && !/<html/i.test(envProbe.body)) {
@@ -403,9 +464,45 @@ if (home.ok && home.headers) {
   if (h('x-powered-by')) f('info', 'hardening', `The server announces what it runs (${h('x-powered-by')})`, 'This header tells an attacker exactly which stack and often which version to target. Turning it off is one line.');
 }
 
+// ---- legal-exposure signals -----------------------------------------------------
+// Only judged when the page actually rendered: a broken app's report should talk
+// about why it is broken, not pile compliance notes on top.
+console.error('[5/6] checking legal-exposure signals');
+if (bl.launched && bl.bodyText >= 40) {
+  const pageHtml = bl.domSample + home.body;
+  const pageText = bl.textSample;
+  const allScriptUrls = [...new Set(bl.scripts)];
+
+  const trackers = detectTrackers(allScriptUrls, bundleText + pageHtml);
+  const consent = hasConsentUi(pageHtml, pageText);
+  const heavy = trackers.filter(t => t.heavy);
+  if (heavy.length && !consent) {
+    f('warn', 'legal', `The site runs ${heavy.map(t => t.name).join(' and ')} with no cookie consent banner`, `The page loads ${trackers.map(t => t.name).join(', ')} for every visitor with no consent step. Ad pixels and session-recording tools loaded before consent are exactly what the current wave of "wiretap" demand letters under the California Invasion of Privacy Act cites (statutory damages of $5,000 per violation are the number those letters lead with), and the same setup violates GDPR/ePrivacy consent rules for any EU visitor. The fix is a consent banner that actually blocks these scripts until the visitor accepts, or removing the trackers. This is a pattern flag from an automated scan, not legal advice.`);
+  } else if (trackers.length && consent) {
+    f('info', 'legal', 'Analytics/tracking scripts and a consent banner are both present', `Detected: ${trackers.map(t => t.name).join(', ')}, alongside what looks like a cookie consent UI. Worth verifying the banner actually withholds those scripts until the visitor accepts; a banner that shows while the pixels fire anyway gives no legal cover.`);
+  }
+
+  const linkBlob = bl.links.join('\n').toLowerCase();
+  const hasPrivacy = /privacy/.test(linkBlob) || /privacy policy/i.test(pageText);
+  const hasTerms = /terms|tos\b/.test(linkBlob) || /terms of (service|use)/i.test(pageText);
+  const collectsData = bl.hasPasswordField || bl.hasEmailField || /supabase\.co|firebaseio\.com|firebaseapp\.com/i.test(bundleText);
+  if (collectsData && !hasPrivacy) {
+    f('warn', 'legal', 'The site collects personal data but posts no privacy policy', `The page has ${bl.hasPasswordField ? 'a login/signup form' : bl.hasEmailField ? 'an email capture field' : 'a user database behind it'}, and no privacy policy link anywhere on the page. California's CalOPPA flatly requires a conspicuous privacy policy on any site collecting personal information from its residents, and CCPA/GDPR notice duties start from the same place. This is also the first thing a demand-letter mill checks because it is provable from a screenshot. A generated policy that honestly describes what you collect takes an hour and closes the gap.${hasTerms ? '' : ' There is no terms of service link either, which leaves you with no liability cap, no governing law, and no right to terminate abusive accounts.'}`);
+  }
+
+  if (bl.imgTotal >= 5 && bl.imgNoAlt / bl.imgTotal > 0.5) {
+    f('info', 'legal', `${bl.imgNoAlt} of ${bl.imgTotal} images have no alt text`, 'Screen-reader users get nothing for those images, and missing alt text is the single most-cited defect in ADA website demand letters (thousands are filed each year, typically settling in the five figures; California\'s Unruh Act adds $4,000 statutory damages per violation for its residents). AI page builders skip alt text by default. Adding a one-line description to each meaningful image and alt="" to decorative ones is usually an hour of work.');
+  }
+
+  const chat = CHAT_WIDGETS.find(([, re]) => re.test(bundleText + pageHtml) || allScriptUrls.some(u => re.test(u)));
+  if (chat && !hasTerms && !hasPrivacy) {
+    f('info', 'legal', `A ${chat[0]} chat widget is running with no posted policies`, 'The site offers a chat channel (often AI-driven) with no terms or privacy policy describing what happens to what users type. Regulators have started treating undisclosed AI chat plus silent data retention as an unfair-practice problem, and chat transcripts are personal data under CCPA/GDPR. Post the policies and, if the bot is AI, say so in the widget.');
+  }
+}
+
 // ---- opt-in data check ---------------------------------------------------------
 if (checkData && sawBundles) {
-  console.error('[5/5] data check (opt-in)');
+  console.error('[6/6] data check (opt-in)');
   const sbUrl = bundleText.match(/https:\/\/[a-z0-9]{8,}\.supabase\.co/i);
   const sbKey = bundleText.match(/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/);
   if (sbUrl && sbKey) {
@@ -431,9 +528,9 @@ if (checkData && sawBundles) {
     }
   }
 } else if (checkData) {
-  console.error('[5/5] data check skipped (no bundles read)');
+  console.error('[6/6] data check skipped (no bundles read)');
 } else {
-  console.error('[5/5] data check skipped (not requested)');
+  console.error('[6/6] data check skipped (not requested)');
 }
 
 // ---- report ---------------------------------------------------------------------
@@ -450,7 +547,7 @@ const verdict = blockers.length
 
 const report = `# Live scan: ${target.hostname}
 
-Scanned ${bl.finalUrl || target.href}${bl.title ? ` ("${bl.title}")` : ''}. Checked: page load in a real browser, the JavaScript it ships, the requests it makes, response headers, and well-known paths${checkData ? ', plus an authenticated-read check against its own database' : ''}.
+Scanned ${bl.finalUrl || target.href}${bl.title ? ` ("${bl.title}")` : ''}. Checked: page load in a real browser, the JavaScript it ships, the requests it makes, response headers, well-known paths, and common legal-exposure signals (tracking pixels vs cookie consent, privacy policy presence, image alt text)${checkData ? ', plus an authenticated-read check against its own database' : ''}.
 
 ## Verdict
 
@@ -463,7 +560,7 @@ ${findings.length
     : 'Nothing notable, which is rarer than it sounds for an AI-built app.'}
 ## How this was checked
 
-A clean headless browser with no logins, no cookies, and no extensions opened the page, and everything above came from what the site itself sent back: the rendered page, its console, the scripts it asked for, and its response headers. A handful of well-known paths were requested to confirm they are not served. ${checkData ? 'The database check used only the public key the app hands to every visitor, and read row counts, never records. ' : ''}Nothing was written, no login was attempted, and no user records were read.
+A clean headless browser with no logins, no cookies, and no extensions opened the page, and everything above came from what the site itself sent back: the rendered page, its console, the scripts it asked for, and its response headers. A handful of well-known paths were requested to confirm they are not served. ${checkData ? 'The database check used only the public key the app hands to every visitor, and read row counts, never records. ' : ''}Nothing was written, no login was attempted, and no user records were read. Legal-exposure items describe patterns courts and regulators have acted on; they are automated flags, not legal advice.
 
 Automated by Vibe Code Rescue. https://dylancaponi.github.io/vibe-code-rescue/
 `;
