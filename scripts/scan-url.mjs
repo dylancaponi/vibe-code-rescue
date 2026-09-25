@@ -483,11 +483,34 @@ if (bl.launched && bl.bodyText >= 40) {
   }
 
   const linkBlob = bl.links.join('\n').toLowerCase();
-  const hasPrivacy = /privacy/.test(linkBlob) || /privacy policy/i.test(pageText);
-  const hasTerms = /terms|tos\b/.test(linkBlob) || /terms of (service|use)/i.test(pageText);
-  const collectsData = bl.hasPasswordField || bl.hasEmailField || /supabase\.co|firebaseio\.com|firebaseapp\.com/i.test(bundleText);
+  // Some apps (Quiet Hours, 09-24) render zero anchors on the landing screen and
+  // put the policy behind the sign-in step, so also probe the conventional URLs
+  // and accept a real page: 2xx, not the SPA shell served for the root, and the
+  // word actually appears in the body. A catch-all fallback fails that test.
+  const probePolicy = async (paths, word) => {
+    for (const path of paths) {
+      const r = await get(new URL(path, finalOrigin).href, { timeoutMs: 8000 });
+      if (!r.ok || r.status >= 300) continue;
+      const body = r.body || '';
+      if (home.body && body.length === home.body.length && body === home.body) continue;
+      if (word.test(body)) return path;
+    }
+    return null;
+  };
+  const privacyPath = await probePolicy(['/privacy', '/privacy-policy', '/legal/privacy'], /privacy (policy|notice)/i);
+  const termsPath = await probePolicy(['/terms', '/terms-of-service', '/tos', '/legal/terms'], /terms (of (service|use)|and conditions)/i);
+  const hasPrivacy = /privacy/.test(linkBlob) || /privacy policy/i.test(pageText) || !!privacyPath;
+  const hasTerms = /terms|tos\b/.test(linkBlob) || /terms of (service|use)/i.test(pageText) || !!termsPath;
+  // A landing page that only links to its /auth or /login route still collects
+  // credentials one click away (Lovable LA, 09-24: no inputs on the homepage,
+  // Lovable Cloud backend proxied under its own domain, so neither the field
+  // check nor the supabase.co check saw it).
+  const hasAuthRoute = /\/(auth|login|log-in|signin|sign-in|signup|sign-up|register)(\/|\?|#|$)/.test(linkBlob)
+    || /\b(log in|sign in|sign up|create (an |your )?account)\b/i.test(pageText);
+  const hasBackend = /supabase\.co|firebaseio\.com|firebaseapp\.com/i.test(bundleText);
+  const collectsData = bl.hasPasswordField || bl.hasEmailField || hasBackend || hasAuthRoute;
   if (collectsData && !hasPrivacy) {
-    f('warn', 'legal', 'The site collects personal data but posts no privacy policy', `The page has ${bl.hasPasswordField ? 'a login/signup form' : bl.hasEmailField ? 'an email capture field' : 'a user database behind it'}, and no privacy policy link anywhere on the page. California's CalOPPA flatly requires a conspicuous privacy policy on any site collecting personal information from its residents, and CCPA/GDPR notice duties start from the same place. This is also the first thing a demand-letter mill checks because it is provable from a screenshot. A generated policy that honestly describes what you collect takes an hour and closes the gap.${hasTerms ? '' : ' There is no terms of service link either, which leaves you with no liability cap, no governing law, and no right to terminate abusive accounts.'}`);
+    f('warn', 'legal', 'The site collects personal data but posts no privacy policy', `The page has ${bl.hasPasswordField ? 'a login/signup form' : bl.hasEmailField ? 'an email capture field' : hasBackend ? 'a user database behind it' : 'a sign-up or login flow'}, and no privacy policy link anywhere on the page. California's CalOPPA flatly requires a conspicuous privacy policy on any site collecting personal information from its residents, and CCPA/GDPR notice duties start from the same place. This is also the first thing a demand-letter mill checks because it is provable from a screenshot. A generated policy that honestly describes what you collect takes an hour and closes the gap.${hasTerms ? '' : ' There is no terms of service link either, which leaves you with no liability cap, no governing law, and no right to terminate abusive accounts.'}`);
   }
 
   if (bl.imgTotal >= 5 && bl.imgNoAlt / bl.imgTotal > 0.5) {
