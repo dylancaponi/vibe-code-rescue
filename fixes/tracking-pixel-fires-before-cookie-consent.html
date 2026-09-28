@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your AI built app fires a Meta or TikTok pixel before cookie consent: the wiretap demand letter risk and the fix</title>
+<meta name="description" content="Your Lovable, Bolt, or Replit app loads a Meta pixel, TikTok pixel, Hotjar, or Microsoft Clarity for every visitor with no consent banner. That exact setup is what California wiretap demand letters cite, at $5,000 per violation. How to confirm it in two minutes and gate the scripts in under an hour.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/tracking-pixel-fires-before-cookie-consent.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>Your app fires a tracking pixel before anyone consents</h1>
+<p class="lead">You asked the AI to "add Facebook ads tracking" or "add analytics" or "add session recording so I can see what users do". It pasted a Meta pixel, a TikTok pixel, Hotjar, or Microsoft Clarity into the page head, and those scripts now run for every visitor the instant the page loads. There is no banner, no choice, and no mention of any of it in a privacy policy. In California that pattern has become its own category of demand letter, and it is visible from the outside in about ten seconds.</p>
+
+<h2>Why this is the one the letters lead with</h2>
+<p>The California Invasion of Privacy Act (CIPA) is a 1960s wiretap statute that plaintiff firms have been applying to websites since roughly 2022. The theory: a pixel or session recorder that captures what a visitor does and sends it to a third party, before the visitor agreed, is an unauthorized interception, and a tracking pixel that fingerprints the visitor's device is an unregistered "pen register". CIPA carries statutory damages of $5,000 per violation, and the letters lead with that number. Courts are split on how far the theory goes, but you do not get to argue that in a demand letter; you get to decide whether to pay or hire someone to respond.</p>
+<p>Session recorders are the worst case because they capture keystrokes and form fields, which can include a visitor's email, address, or a support message. Ad pixels are next because Meta and TikTok match the event data to a real identity on their side.</p>
+<p>For EU visitors the same setup violates the ePrivacy rules and GDPR consent requirement, which is why every serious cookie banner exists. And if the pixel fires on a health, finance, or dating app, add sector rules on top.</p>
+
+<h2>Confirm it in two minutes</h2>
+<ol>
+  <li>Open your deployed app in a private window so nothing is cached, and do not click anything.</li>
+  <li>Open the browser developer tools (right click, Inspect) and go to the Network tab. Reload the page. Type <code>facebook</code> in the filter, then <code>tiktok</code>, then <code>hotjar</code>, then <code>clarity</code>. Any request to <code>connect.facebook.net</code>, <code>analytics.tiktok.com</code>, <code>static.hotjar.com</code>, or <code>clarity.ms</code> on a fresh load, before you accepted anything, is the problem.</li>
+  <li>Quicker version: view the page source (Ctrl-U or Cmd-Option-U) and search for <code>fbq(</code>, <code>ttq.load</code>, <code>hj(</code>, or <code>clarity(</code>. If the call sits in the page head with nothing gating it, it fires for everyone.</li>
+  <li>Now look for a consent banner. Not a "we use cookies" notice with an OK button that changes nothing. A real banner blocks the scripts until the visitor accepts. If you saw the requests in step 2 with no banner, or with a banner that had not been clicked yet, the banner is decorative.</li>
+</ol>
+
+<h2>First question: do you actually use it?</h2>
+<p>A lot of AI built apps carry a pixel that no ad campaign ever used, or a Hotjar snippet the builder added "for insights" that nobody has opened since. If you are not running ads and not reading recordings, delete the snippet. That is the whole fix, and it removes the exposure entirely instead of managing it. Tell your builder: "Remove the Meta pixel and the Hotjar script from every page. Do not replace them with anything."</p>
+
+<h2>The fix if you do need it, under an hour</h2>
+<ol>
+  <li><strong>Gate the scripts behind consent, for real.</strong> The pixel and recorder must not load until the visitor clicks accept. A banner that shows while the scripts already fired gives no cover. For Lovable, Bolt, or v0, this prompt works: "Add a cookie consent banner. Do not load the Meta pixel, TikTok pixel, Hotjar, or Clarity scripts until the visitor clicks Accept. Store the choice in localStorage. If they click Decline, never load them. Add a Cookie settings link in the footer that reopens the banner." Then verify with the Network tab that nothing tracking related fires on a fresh load until you click Accept.</li>
+  <li><strong>Or use a consent manager that does the blocking.</strong> Cookiebot, CookieYes, Termly, Osano, and iubenda all have free tiers and all can auto-block known tracking scripts until consent. The important setting is auto-blocking or "prior consent", not just showing a banner. Follow their install instructions, then re-run the Network tab test.</li>
+  <li><strong>Turn off keystroke capture in session recorders.</strong> Hotjar and Clarity both mask form input by default, but AI generated setups sometimes turn it off or add custom attributes. Check the tool's privacy settings and make sure form fields, and any element showing personal data, are masked.</li>
+  <li><strong>Disclose it in the privacy policy.</strong> Name the tools (Meta, TikTok, Hotjar, Clarity, Google Analytics), what they collect, and how to opt out. If you have no privacy policy at all, start with <a href="app-no-privacy-policy.html">that guide</a>; it is a bigger gap than the pixel.</li>
+  <li><strong>Re-test as a stranger.</strong> Private window, fresh load, Network tab, no clicks: zero tracking requests. Click Accept: they appear. Click Decline: they do not. That is the state that holds up.</li>
+</ol>
+
+<h2>Do not do this</h2>
+<p>Do not add a banner that says "By using this site you agree to cookies" while the scripts fire anyway. It advertises that you knew and did nothing, and it is what a letter will screenshot. Do not set the consent default to accepted. Do not rely on a Google Analytics "consent mode" setting to cover a Meta pixel; it does not.</p>
+
+<h2>Related exposure the same audience ships</h2>
+<p>The same page that has a pixel without consent usually has no privacy policy either, which is its own statute (CalOPPA) and <a href="app-no-privacy-policy.html">its own guide</a>. And if the AI skipped alt text on most of your images, that is the ADA accessibility category, covered in the <a href="images-missing-alt-text-ada.html">alt text guide</a>. All three are checked from the outside in seconds, which is how the letter mills find small apps.</p>
+
+<h2>Not sure what your app is exposing?</h2>
+<div class="card">
+<p><strong>Run the free scan.</strong> Paste your deployed link and a clean browser opens your app the way a stranger would and reports back in plain English: which tracking scripts load, whether a consent banner is present, whether your privacy policy is actually visible, plus broken pages, leaked keys, and open database tables. Read-only, nothing written, free.</p>
+<a class="cta" href="https://github.com/dylancaponi/vibe-code-rescue/issues/new?template=scan.yml">Scan my live app, free</a>
+<p class="note"><a href="mailto:dylan.caponi@gmail.com?subject=Free%20app%20scan%20(tracking%20consent)">Or email me the link instead</a>. Want the full ranked report and fix plan written by a person? The <a href="https://buy.stripe.com/8x2eVc8qA58zdkFcOn7Zu00" rel="nofollow">paid diagnosis is $39</a>. This page is general information, not legal advice; for actual legal questions about your situation, ask a lawyer.</p>
+</div>
+</main>
+<footer class="site">
+  <div class="inner">Vibe Code Rescue. Broken AI built apps diagnosed free and fixed in 24 hours. <a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis">dylan.caponi@gmail.com</a></div>
+</footer>
+</body>
+</html>

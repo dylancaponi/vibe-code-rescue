@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Most images in your AI built app have no alt text: the ADA demand letter risk and the one hour fix</title>
+<meta name="description" content="Lovable, Bolt, v0, and Replit skip alt text on images by default. Missing alt text is the most cited defect in ADA website accessibility demand letters, and California's Unruh Act adds $4,000 per violation. A one line console check to count yours, and the prompt that fixes them in an hour.">
+<link rel="canonical" href="https://dylancaponi.github.io/vibe-code-rescue/fixes/images-missing-alt-text-ada.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <a class="brand" href="../">Vibe Code Rescue</a>
+    <nav>
+      <a href="lovable-blank-screen.html">Fix guides</a>
+      <a href="../#diagnosis">Free diagnosis</a>
+    </nav>
+  </div>
+</header>
+<main>
+<h1>Most of your images have no alt text</h1>
+<p class="lead">You built the app with Lovable, Bolt, v0, or Replit. The hero image, the feature icons, the product photos, the team headshots: the AI wrote <code>&lt;img src="..."&gt;</code> for every one of them and stopped there. A screen reader user gets the filename or silence. That is the single most cited defect in website accessibility demand letters, because a bot can count it, and the letters are sent by the thousands.</p>
+
+<h2>Why this matters more than it feels like it should</h2>
+<p>Courts have treated public facing websites of businesses as places of public accommodation under Title III of the Americans with Disabilities Act, and several thousand web accessibility suits are filed in federal court every year, plus far more demand letters that never become suits. The plaintiff firms work from automated scans, and missing alt text is the first line of every report those scans produce. The ADA itself gives plaintiffs attorney fees and an injunction, not damages, which is why these cases are so often filed in California: the state's Unruh Civil Rights Act adds statutory damages of $4,000 per violation for California residents, and New York has its own equivalent. Typical settlements land in the five figures.</p>
+<p>The standard everyone measures against is WCAG 2.1 level AA. Its very first criterion, 1.1.1, is that every non-text element has a text alternative. You do not need to read the rest of it to fix this page.</p>
+<p>Separate from the law: alt text is what Google reads for image search and what shows when an image fails to load. Fixing it is free SEO.</p>
+
+<h2>Count them in thirty seconds</h2>
+<ol>
+  <li>Open your deployed app, open the browser developer tools (right click, Inspect), and go to the Console tab.</li>
+  <li>Paste this and press Enter:
+  <pre><code>[...document.images].filter(i => !i.hasAttribute('alt')).length + ' of ' + document.images.length + ' images have no alt attribute'</code></pre></li>
+  <li>Do the same on your two or three busiest pages. If more than a handful are missing on any page, or more than half overall, you are in the group the scanners flag.</li>
+  <li>Also check icons and logos that the AI rendered as SVG or as CSS background images: those need a text label a different way (see below), but the console line will not count them.</li>
+</ol>
+
+<h2>The fix, about an hour</h2>
+<ol>
+  <li><strong>Decide which images mean something.</strong> A product photo, a chart, a screenshot, a logo that acts as a link, a team headshot: these carry information and need a real description. A decorative gradient, a divider, a background flourish: these carry nothing and should be explicitly marked as such so screen readers skip them.</li>
+  <li><strong>Write short, specific alt text for the meaningful ones.</strong> One sentence that says what the image shows in context. "Dashboard showing weekly sales by region" beats "dashboard" and far beats "image". Do not start with "image of" or "picture of"; the screen reader already says that. Do not stuff keywords.</li>
+  <li><strong>Mark decorative images as decorative.</strong> That means <code>alt=""</code>, an empty string, on purpose. An empty alt is correct for decoration; a missing alt is the defect. For CSS background images nothing is needed. For decorative inline SVGs add <code>aria-hidden="true"</code>.</li>
+  <li><strong>Handle images that are links or buttons.</strong> A logo that links home needs alt text saying where it goes ("Home") not what it looks like. An icon button with no visible label needs <code>aria-label="Close"</code> or similar on the button itself.</li>
+  <li><strong>Let the builder do the typing.</strong> This prompt does most of the work in Lovable, Bolt, or v0: "Go through every img element in the app. For each image that conveys information, add a concise descriptive alt attribute based on where it is used. For purely decorative images add alt="". For inline SVG icons that are decorative add aria-hidden="true". For icon-only buttons add an aria-label. Do not change any layout." Then re-run the console line and spot check that the descriptions are true, because the AI will guess when it cannot see the image.</li>
+  <li><strong>Uploaded content needs a rule too.</strong> If users upload images (avatars, listings), make the upload form ask for a short description, or set a sensible default alt from the listing title. Otherwise every new upload reopens the gap.</li>
+</ol>
+
+<h2>While you are in there: the other things the scans count</h2>
+<p>The same automated reports that count alt text also count these, and each is a few minutes: every form input needs an associated label (not just placeholder text); the page needs a <code>lang</code> attribute on the html element; link text should say where it goes ("View pricing", not "click here"); text on colored backgrounds needs enough contrast (a 4.5 to 1 ratio for normal text; the browser's Inspect panel shows the ratio when you hover a color); and the whole page should be usable with the Tab key alone, with a visible focus outline. AI builders get some of these right by default and miss others at random.</p>
+
+<h2>Do not do this</h2>
+<p>Do not install an "accessibility overlay" widget that promises to make the site compliant with one script tag. Plaintiff firms sue sites with overlays at the same rate, the overlays are named in complaints, and the Federal Trade Commission has already acted against one vendor for compliance claims. Fixing the markup is cheaper and actually works. And do not set every alt to the page title or the company name; that is counted as a defect too.</p>
+
+<h2>Related exposure the same audience ships</h2>
+<p>An app with no alt text usually shipped without a privacy policy, and often with an analytics pixel firing before consent. Both are their own demand letter categories with their own guides: <a href="app-no-privacy-policy.html">no privacy policy</a> and <a href="tracking-pixel-fires-before-cookie-consent.html">pixel before consent</a>. All three are visible from the outside in seconds, which is how small apps get found.</p>
+
+<h2>Not sure what your app is exposing?</h2>
+<div class="card">
+<p><strong>Run the free scan.</strong> Paste your deployed link and a clean browser opens your app the way a stranger would and reports back in plain English: how many images are missing alt text, whether trackers fire without consent, whether your privacy policy is actually visible, plus broken pages, leaked keys, and open database tables. Read-only, nothing written, free.</p>
+<a class="cta" href="https://github.com/dylancaponi/vibe-code-rescue/issues/new?template=scan.yml">Scan my live app, free</a>
+<p class="note"><a href="mailto:dylan.caponi@gmail.com?subject=Free%20app%20scan%20(alt%20text)">Or email me the link instead</a>. Want the full ranked report and fix plan written by a person? The <a href="https://buy.stripe.com/8x2eVc8qA58zdkFcOn7Zu00" rel="nofollow">paid diagnosis is $39</a>. This page is general information, not legal advice; for actual legal questions about your situation, ask a lawyer.</p>
+</div>
+</main>
+<footer class="site">
+  <div class="inner">Vibe Code Rescue. Broken AI built apps diagnosed free and fixed in 24 hours. <a href="mailto:dylan.caponi@gmail.com?subject=Free%20rescue%20diagnosis">dylan.caponi@gmail.com</a></div>
+</footer>
+</body>
+</html>
